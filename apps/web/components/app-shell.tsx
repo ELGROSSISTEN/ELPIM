@@ -213,6 +213,12 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: 'Udrulning',
+    items: [
+      { href: '/run', label: 'Kørsel', icon: <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M5 3l14 9-14 9V3z"/></svg> },
+    ],
+  },
+  {
     label: 'Opsætning',
     items: [
       { href: '/settings/fields', label: 'Felter', icon: <IconFields /> },

@@ -10117,6 +10117,301 @@ app.post('/notify/bulk-done', async (request: any, reply: any) => {
   return reply.code(204).send();
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// RUN CAMPAIGNS — bulk AI processing
+// ══════════════════════════════════════════════════════════════════════════════
+
+// GET /run-campaigns — list all campaigns for current shop
+app.get('/run-campaigns', async (request: any, reply: any) => {
+  if (!(await withAuth(request, reply))) return;
+  const user = await getCurrentUser(request);
+  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+
+  const campaigns = await prisma.runCampaign.findMany({
+    where: { shopId: user.shopId },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true, name: true, status: true, fieldsJson: true,
+      batchSize: true, concurrency: true, collectionsFirst: true,
+      excludeSkusJson: true, overwriteJson: true,
+      totalItems: true, doneItems: true, failedItems: true, skippedItems: true,
+      startedAt: true, completedAt: true, createdAt: true, updatedAt: true,
+    },
+  });
+  return { campaigns };
+});
+
+// POST /run-campaigns — create new campaign
+app.post('/run-campaigns', async (request: any, reply: any) => {
+  if (!(await withAuth(request, reply))) return;
+  const user = await getCurrentUser(request);
+  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+
+  const body = (request.body ?? {}) as {
+    name?: string;
+    fieldsJson?: string[];
+    batchSize?: number;
+    concurrency?: number;
+    collectionsFirst?: boolean;
+    excludeSkusJson?: string[];
+    overwriteJson?: string[];
+  };
+
+  if (!body.name?.trim()) return reply.code(400).send({ error: 'name er påkrævet' });
+  if (!Array.isArray(body.fieldsJson) || body.fieldsJson.length === 0) return reply.code(400).send({ error: 'Vælg mindst ét felt' });
+
+  const campaign = await prisma.runCampaign.create({
+    data: {
+      shopId: user.shopId,
+      name: body.name.trim(),
+      fieldsJson: body.fieldsJson,
+      batchSize: body.batchSize ?? 50,
+      concurrency: body.concurrency ?? 5,
+      collectionsFirst: body.collectionsFirst ?? true,
+      excludeSkusJson: body.excludeSkusJson ?? [],
+      overwriteJson: body.overwriteJson ?? [],
+    },
+  });
+  return reply.code(201).send({ campaign });
+});
+
+// GET /run-campaigns/:id — get campaign with recent logs and item stats
+app.get('/run-campaigns/:id', async (request: any, reply: any) => {
+  if (!(await withAuth(request, reply))) return;
+  const user = await getCurrentUser(request);
+  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+
+  const { id } = request.params as { id: string };
+  const campaign = await prisma.runCampaign.findFirst({
+    where: { id, shopId: user.shopId },
+  });
+  if (!campaign) return reply.code(404).send({ error: 'Kampagne ikke fundet' });
+
+  const [logs, itemCounts] = await Promise.all([
+    prisma.runCampaignLog.findMany({
+      where: { campaignId: id },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    }),
+    prisma.runCampaignItem.groupBy({
+      by: ['status'],
+      where: { campaignId: id },
+      _count: { status: true },
+    }),
+  ]);
+
+  return { campaign, logs, itemCounts };
+});
+
+// GET /run-campaigns/:id/items — paginated item list
+app.get('/run-campaigns/:id/items', async (request: any, reply: any) => {
+  if (!(await withAuth(request, reply))) return;
+  const user = await getCurrentUser(request);
+  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+
+  const { id } = request.params as { id: string };
+  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId: user.shopId }, select: { id: true } });
+  if (!campaign) return reply.code(404).send({ error: 'Kampagne ikke fundet' });
+
+  const q = request.query as { status?: string; page?: string; pageSize?: string };
+  const page = Math.max(1, Number(q.page ?? 1));
+  const pageSize = Math.min(200, Math.max(1, Number(q.pageSize ?? 100)));
+  const statusFilter = q.status && q.status !== 'all' ? q.status : undefined;
+
+  const where: any = { campaignId: id, ...(statusFilter ? { status: statusFilter } : {}) };
+  const [total, items] = await Promise.all([
+    prisma.runCampaignItem.count({ where }),
+    prisma.runCampaignItem.findMany({
+      where,
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: {
+        id: true, productId: true, title: true, sku: true, status: true,
+        fieldsDoneJson: true, processedAt: true, errorMsg: true, sortOrder: true,
+      },
+    }),
+  ]);
+  return { total, page, pageSize, items };
+});
+
+// POST /run-campaigns/:id/populate — fill campaign with products (collections-first ordering)
+app.post('/run-campaigns/:id/populate', async (request: any, reply: any) => {
+  if (!(await withAuth(request, reply))) return;
+  const user = await getCurrentUser(request);
+  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+
+  const { id } = request.params as { id: string };
+  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId: user.shopId } });
+  if (!campaign) return reply.code(404).send({ error: 'Kampagne ikke fundet' });
+  if (campaign.status !== 'draft') return reply.code(400).send({ error: 'Kan kun populere en draft-kampagne' });
+
+  const body = (request.body ?? {}) as { limit?: number };
+  const limit = body.limit ?? 0; // 0 = all
+
+  const excludeSkus = (campaign.excludeSkusJson as string[]) ?? [];
+
+  // Products with at least one collection — sorted by collection then product
+  const withCollections = await prisma.product.findMany({
+    where: {
+      shopId: user.shopId,
+      shopifyDeletedAt: null,
+      ...(excludeSkus.length > 0 ? {
+        NOT: { variants: { some: { sku: { in: excludeSkus } } } },
+      } : {}),
+      collections: { some: {} },
+    },
+    orderBy: [{ handle: 'asc' }],
+    select: {
+      id: true, title: true,
+      variants: { take: 1, select: { sku: true } },
+    },
+    ...(limit > 0 ? { take: limit } : {}),
+  });
+
+  const remainingLimit = limit > 0 ? limit - withCollections.length : 0;
+
+  // Products without any collection (only if limit not yet reached)
+  const withoutCollections = campaign.collectionsFirst && remainingLimit !== 0 ? await prisma.product.findMany({
+    where: {
+      shopId: user.shopId,
+      shopifyDeletedAt: null,
+      ...(excludeSkus.length > 0 ? {
+        NOT: { variants: { some: { sku: { in: excludeSkus } } } },
+      } : {}),
+      collections: { none: {} },
+    },
+    orderBy: [{ handle: 'asc' }],
+    select: {
+      id: true, title: true,
+      variants: { take: 1, select: { sku: true } },
+    },
+    ...(limit > 0 && remainingLimit > 0 ? { take: remainingLimit } : {}),
+  }) : [];
+
+  const allProducts = [...withCollections, ...withoutCollections];
+
+  // Upsert items with sortOrder
+  const upserts = allProducts.map((p, i) =>
+    prisma.runCampaignItem.upsert({
+      where: { campaignId_productId: { campaignId: id, productId: p.id } },
+      update: {},
+      create: {
+        campaignId: id,
+        productId: p.id,
+        title: p.title,
+        sku: p.variants?.[0]?.sku ?? null,
+        sortOrder: i,
+      },
+    }),
+  );
+
+  await prisma.$transaction(upserts);
+
+  const total = await prisma.runCampaignItem.count({ where: { campaignId: id } });
+  await prisma.runCampaign.update({ where: { id }, data: { totalItems: total } });
+
+  await prisma.runCampaignLog.create({
+    data: {
+      campaignId: id, level: 'info',
+      message: `Kampagne populeret med ${total} produkter (${withCollections.length} med kollektioner, ${withoutCollections.length} uden).`,
+    },
+  });
+
+  return { total, withCollections: withCollections.length, withoutCollections: withoutCollections.length };
+});
+
+// POST /run-campaigns/:id/start — start or resume processing
+app.post('/run-campaigns/:id/start', async (request: any, reply: any) => {
+  if (!(await withAuth(request, reply))) return;
+  const user = await getCurrentUser(request);
+  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+
+  const { id } = request.params as { id: string };
+  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId: user.shopId } });
+  if (!campaign) return reply.code(404).send({ error: 'Kampagne ikke fundet' });
+  if (campaign.status === 'running') return reply.code(400).send({ error: 'Kampagne kører allerede' });
+  if (campaign.status === 'done') return reply.code(400).send({ error: 'Kampagne er allerede færdig' });
+
+  const pendingCount = await prisma.runCampaignItem.count({ where: { campaignId: id, status: { in: ['pending', 'failed'] } } });
+  if (pendingCount === 0) return reply.code(400).send({ error: 'Ingen ventende produkter' });
+
+  await prisma.runCampaign.update({
+    where: { id },
+    data: { status: 'running', startedAt: campaign.startedAt ?? new Date() },
+  });
+
+  // Enqueue the campaign processing job
+  const syncJob = await prisma.syncJob.create({
+    data: {
+      shopId: user.shopId,
+      type: 'run_campaign',
+      status: 'queued',
+      payloadJson: { campaignId: id },
+    },
+  });
+
+  // Import runCampaignQueue lazily to avoid circular deps — enqueue via HTTP signal instead
+  await prisma.runCampaignLog.create({
+    data: { campaignId: id, level: 'info', message: `Kørsel startet. Behandler ${pendingCount} ventende produkter.` },
+  });
+
+  return { ok: true, syncJobId: syncJob.id, pendingCount };
+});
+
+// POST /run-campaigns/:id/pause — pause running campaign
+app.post('/run-campaigns/:id/pause', async (request: any, reply: any) => {
+  if (!(await withAuth(request, reply))) return;
+  const user = await getCurrentUser(request);
+  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+
+  const { id } = request.params as { id: string };
+  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId: user.shopId } });
+  if (!campaign) return reply.code(404).send({ error: 'Kampagne ikke fundet' });
+  if (campaign.status !== 'running') return reply.code(400).send({ error: 'Kampagne kører ikke' });
+
+  await prisma.runCampaign.update({ where: { id }, data: { status: 'paused' } });
+  await prisma.runCampaignLog.create({
+    data: { campaignId: id, level: 'warn', message: 'Kørsel sat på pause. Igangværende batch færdiggøres.' },
+  });
+  return { ok: true };
+});
+
+// PATCH /run-campaigns/:id/items/:itemId — skip or reset a single item
+app.patch('/run-campaigns/:id/items/:itemId', async (request: any, reply: any) => {
+  if (!(await withAuth(request, reply))) return;
+  const user = await getCurrentUser(request);
+  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+
+  const { id, itemId } = request.params as { id: string; itemId: string };
+  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId: user.shopId }, select: { id: true } });
+  if (!campaign) return reply.code(404).send({ error: 'Kampagne ikke fundet' });
+
+  const body = (request.body ?? {}) as { status?: string };
+  if (!['skipped', 'pending'].includes(body.status ?? '')) return reply.code(400).send({ error: 'status skal være skipped eller pending' });
+
+  await prisma.runCampaignItem.update({
+    where: { id: itemId },
+    data: { status: body.status, ...(body.status === 'pending' ? { errorMsg: null, processedAt: null, fieldsDoneJson: {} } : {}) },
+  });
+  return { ok: true };
+});
+
+// DELETE /run-campaigns/:id — delete campaign and all items/logs
+app.delete('/run-campaigns/:id', async (request: any, reply: any) => {
+  if (!(await withAuth(request, reply))) return;
+  const user = await getCurrentUser(request);
+  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+
+  const { id } = request.params as { id: string };
+  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId: user.shopId }, select: { id: true, status: true } });
+  if (!campaign) return reply.code(404).send({ error: 'Kampagne ikke fundet' });
+  if (campaign.status === 'running') return reply.code(400).send({ error: 'Stop kampagnen først' });
+
+  await prisma.runCampaign.delete({ where: { id } });
+  return { ok: true };
+});
+
 const start = async (): Promise<void> => {
   await applyBootstrapMigrations();
   await app.listen({ port: env.PORT, host: '0.0.0.0' });

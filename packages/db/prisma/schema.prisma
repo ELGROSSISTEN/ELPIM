@@ -257,6 +257,7 @@ model Shop {
   referralCommissions  ReferralCommission[]
   qualityRules         QualityRule[]
   productMetafields    ProductMetafield[]
+  runCampaigns         RunCampaign[]
 
   @@index([organizationId])
 }
@@ -586,6 +587,7 @@ model Product {
   collections   ProductCollection[]
   metafields    ProductMetafield[]
   translations  ProductTranslation[]
+  runCampaignItems RunCampaignItem[]
 
   @@index([shopId])
 }
@@ -858,4 +860,67 @@ model ProductMetafield {
   @@unique([productId, namespace, key])
   @@unique([variantId, namespace, key])
   @@index([shopId, productId])
+}
+
+// ─── Run Campaigns (bulk AI processing) ────────────────────────────────────
+
+model RunCampaign {
+  id               String   @id @default(cuid())
+  shopId           String
+  name             String
+  status           String   @default("draft") // draft | running | paused | done | failed
+  fieldsJson       Json     // string[] — fieldDefinitionIds to process
+  batchSize        Int      @default(50)
+  concurrency      Int      @default(5)
+  collectionsFirst Boolean  @default(true)
+  excludeSkusJson  Json     @default("[]") // string[]
+  overwriteJson    Json     @default("[]") // string[] — fieldDefIds where we overwrite existing values
+  totalItems       Int      @default(0)
+  doneItems        Int      @default(0)
+  failedItems      Int      @default(0)
+  skippedItems     Int      @default(0)
+  startedAt        DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  shop    Shop              @relation(fields: [shopId], references: [id])
+  items   RunCampaignItem[]
+  logs    RunCampaignLog[]
+
+  @@index([shopId, status])
+}
+
+model RunCampaignItem {
+  id            String    @id @default(cuid())
+  campaignId    String
+  productId     String
+  title         String?
+  sku           String?
+  status        String    @default("pending") // pending | processing | done | failed | skipped
+  fieldsDoneJson Json     @default("{}") // { fieldDefId: "done"|"failed"|"skipped" }
+  processedAt   DateTime?
+  errorMsg      String?
+  sortOrder     Int       @default(0)
+  createdAt     DateTime  @default(now())
+
+  campaign RunCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  product  Product     @relation(fields: [productId], references: [id])
+
+  @@unique([campaignId, productId])
+  @@index([campaignId, status, sortOrder])
+}
+
+model RunCampaignLog {
+  id         String   @id @default(cuid())
+  campaignId String
+  itemId     String?
+  level      String   @default("info") // info | warn | error | success
+  message    String
+  metaJson   Json?
+  createdAt  DateTime @default(now())
+
+  campaign RunCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, createdAt(sort: Desc)])
 }
