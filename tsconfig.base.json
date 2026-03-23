@@ -9,6 +9,7 @@
     "resolveJsonModule": true,
     "declaration": true,
     "sourceMap": true,
-    "outDir": "dist"
+    "outDir": "dist",
+    "noEmitOnError": false
   }
 }
