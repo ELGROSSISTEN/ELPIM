@@ -2638,11 +2638,11 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
     const promptsByField: Record<string, string> = {};
     for (const fd of fieldDefs) {
       const pt = await prisma.promptTemplate.findFirst({
-        where: { shopId: campaign.shopId, fieldDefinitionId: fd.id },
+        where: { shopId: campaign.shopId, isDefault: true },
         orderBy: { createdAt: 'desc' },
-        select: { promptTemplate: true },
+        select: { body: true },
       });
-      promptsByField[fd.id] = pt?.promptTemplate ?? `Generer ${fd.label} for produktet baseret på titel, type og leverandør.`;
+      promptsByField[fd.id] = pt?.body ?? `Generer ${fd.label} for produktet baseret på titel, type og leverandør.`;
     }
 
     let processedTotal = 0;
