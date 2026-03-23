@@ -4,7 +4,7 @@ set -euo pipefail
 # Deploy ePIM monorepo to Railway
 # Usage: ./scripts/deploy-railway.sh [api|worker|web|all]
 
-PROJECT="epim-prod"
+PROJECT="elpim-prod"
 ENV="production"
 TARGET="${1:-all}"
 
@@ -38,33 +38,33 @@ EOF
 
 case "$TARGET" in
   api)
-    deploy_service "epim-api" "Dockerfile.api" '[deploy]
+    deploy_service "elpim-api" "Dockerfile.api" '[deploy]
 healthcheckPath = "/health"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3'
     ;;
   worker)
-    deploy_service "epim-worker" "Dockerfile.worker" '[deploy]
+    deploy_service "elpim-worker" "Dockerfile.worker" '[deploy]
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3'
     ;;
   web)
-    deploy_service "epim-web" "Dockerfile.web" '[deploy]
+    deploy_service "elpim-web" "Dockerfile.web" '[deploy]
 healthcheckPath = "/"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3'
     ;;
   all)
-    deploy_service "epim-api" "Dockerfile.api" '[deploy]
+    deploy_service "elpim-api" "Dockerfile.api" '[deploy]
 healthcheckPath = "/health"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3'
 
-    deploy_service "epim-worker" "Dockerfile.worker" '[deploy]
+    deploy_service "elpim-worker" "Dockerfile.worker" '[deploy]
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3'
 
-    deploy_service "epim-web" "Dockerfile.web" '[deploy]
+    deploy_service "elpim-web" "Dockerfile.web" '[deploy]
 healthcheckPath = "/"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3'
