@@ -1,0 +1,29 @@
+{
+  "name": "epim",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "bootstrap:local": "bash scripts/bootstrap-local.sh",
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:migrate": "pnpm --filter @epim/db prisma:migrate",
+    "db:generate": "pnpm --filter @epim/db prisma:generate",
+    "db:seed": "pnpm --filter @epim/db seed",
+    "db:backfill:multitenancy": "pnpm --filter @epim/db backfill:multitenancy",
+    "qa:ready": "pnpm db:generate && pnpm --filter @epim/api test && pnpm --filter @epim/api typecheck && pnpm --filter @epim/worker typecheck && pnpm --filter @epim/web typecheck && pnpm --filter @epim/shared test",
+    "qa:e2e": "pnpm --filter @epim/web test:e2e"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@typescript-eslint/eslint-plugin": "^8.22.0",
+    "@typescript-eslint/parser": "^8.22.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.0.1",
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.3"
+  }
+}

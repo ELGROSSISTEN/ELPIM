@@ -1,0 +1,38 @@
+FROM node:20-slim AS base
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+RUN apt-get update -qq && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.json ./
+COPY packages/shared/package.json packages/shared/
+COPY packages/crypto/package.json packages/crypto/
+COPY packages/db/package.json packages/db/
+COPY packages/shopify/package.json packages/shopify/
+COPY apps/api/package.json apps/api/
+COPY apps/worker/package.json apps/worker/
+COPY apps/web/package.json apps/web/
+
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+RUN pnpm --filter @epim/db exec prisma generate
+RUN pnpm run build
+RUN pnpm --filter @epim/api --prod deploy /deploy/api
+# Copy generated prisma client into deploy output (pnpm deploy installs fresh deps without it)
+RUN PRISMA_SRC=$(find /app/node_modules/.pnpm -path '*/@prisma+client@*/node_modules/.prisma' -type d | head -1) && \
+    PRISMA_DST=$(find /deploy/api/node_modules/.pnpm -path '*/@prisma+client@*/node_modules' -type d | head -1) && \
+    cp -r "$PRISMA_SRC" "$PRISMA_DST/"
+
+FROM node:20-slim
+RUN apt-get update -qq && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+
+COPY --from=base /deploy/api .
+COPY --from=base /app/packages/db/prisma ./prisma
+COPY --from=base /app/apps/api/entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+
+ENV NODE_ENV=production
+EXPOSE 4000
+
+CMD ["./entrypoint.sh"]

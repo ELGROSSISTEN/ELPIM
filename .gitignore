@@ -1,0 +1,20 @@
+node_modules
+.pnpm-store
+.next
+dist
+coverage
+playwright-report
+test-results
+.env
+.env.*
+!.env.example
+.local
+.turbo
+
+# TypeScript build artifacts in packages (emitted by tsc)
+packages/*/src/*.js
+packages/*/src/*.js.map
+packages/*/src/*.d.ts
+packages/db/prisma/*.js
+packages/db/prisma/*.js.map
+packages/db/prisma/*.d.ts

@@ -1,0 +1,36 @@
+{
+  "name": "@epim/db",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "files": ["dist", "prisma"],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "DATABASE_URL=${DATABASE_URL:-postgresql://$USER@localhost:5432/epim} MASTER_ENCRYPTION_KEY=${MASTER_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef} vitest run --passWithNoTests",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "seed": "tsx prisma/seed.ts",
+    "backfill:multitenancy": "tsx prisma/backfill-multitenancy.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.2.1",
+    "prisma": "^6.2.1",
+    "@epim/shared": "workspace:*",
+    "@epim/crypto": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "vitest": "^2.1.8"
+  }
+}

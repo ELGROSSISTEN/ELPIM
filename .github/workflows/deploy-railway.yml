@@ -1,0 +1,22 @@
+name: Deploy Railway
+
+"on":
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli
+
+      - name: Deploy api, worker, web
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          chmod +x ./scripts/deploy-railway.sh
+          ./scripts/deploy-railway.sh all
