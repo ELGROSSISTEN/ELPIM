@@ -25,21 +25,53 @@ type LogEntry = {
   id: string; level: string; message: string; createdAt: string; itemId: string | null;
 };
 
+// ── Scope options ──────────────────────────────────────────────────────────
+
+const SCOPES = [
+  {
+    value: 100,
+    label: '100 produkter',
+    tag: 'Kvalitetstest',
+    description: 'Tjek at AI-outputtet er godt nok',
+    color: 'border-sky-200 bg-sky-50 text-sky-700',
+    activeColor: 'border-sky-500 bg-sky-100 ring-2 ring-sky-300',
+    tagColor: 'bg-sky-100 text-sky-600',
+  },
+  {
+    value: 1000,
+    label: '1.000 produkter',
+    tag: 'Prisestimering',
+    description: 'Gang udgiften med 134 = fuld pris',
+    color: 'border-violet-200 bg-violet-50 text-violet-700',
+    activeColor: 'border-violet-500 bg-violet-100 ring-2 ring-violet-300',
+    tagColor: 'bg-violet-100 text-violet-600',
+  },
+  {
+    value: 0,
+    label: 'Alle produkter',
+    tag: 'Fuld udrulning',
+    description: 'Kør alle ~134.000 produkter igennem',
+    color: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    activeColor: 'border-emerald-500 bg-emerald-100 ring-2 ring-emerald-300',
+    tagColor: 'bg-emerald-100 text-emerald-600',
+  },
+] as const;
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const STATUS_COLOR: Record<string, string> = {
-  draft: 'bg-slate-100 text-slate-600',
+  draft:   'bg-slate-100 text-slate-600',
   running: 'bg-blue-100 text-blue-700',
-  paused: 'bg-amber-100 text-amber-700',
-  done: 'bg-green-100 text-green-700',
-  failed: 'bg-red-100 text-red-700',
+  paused:  'bg-amber-100 text-amber-700',
+  done:    'bg-emerald-100 text-emerald-700',
+  failed:  'bg-red-100 text-red-700',
 };
 const STATUS_DK: Record<string, string> = {
   draft: 'Kladde', running: 'Kører', paused: 'Pause', done: 'Færdig', failed: 'Fejlet',
   pending: 'Afventer', processing: 'Behandler', skipped: 'Sprunget over',
 };
 const LOG_COLOR: Record<string, string> = {
-  info: 'text-slate-600', warn: 'text-amber-600', error: 'text-red-600', success: 'text-green-600',
+  info: 'text-slate-400', warn: 'text-amber-400', error: 'text-red-400', success: 'text-emerald-400',
 };
 const LOG_PREFIX: Record<string, string> = {
   info: '·', warn: '⚠', error: '✗', success: '✓',
@@ -53,6 +85,13 @@ function pct(done: number, total: number): number {
 function fmtDate(s: string | null): string {
   if (!s) return '—';
   return new Date(s).toLocaleString('da-DK', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function scopeLabel(total: number): string {
+  if (total === 0) return '—';
+  if (total <= 100) return '100 produkter (test)';
+  if (total <= 1000) return '1.000 produkter (stikprøve)';
+  return `${total.toLocaleString('da-DK')} produkter (fuld udrulning)`;
 }
 
 // ── Main component ─────────────────────────────────────────────────────────
@@ -73,24 +112,20 @@ export default function RunPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newFields, setNewFields] = useState<string[]>([]);
+  const [newScope, setNewScope] = useState<number>(100);
+  const [newOverwrite, setNewOverwrite] = useState<string[]>([]);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [newBatchSize, setNewBatchSize] = useState(50);
   const [newConcurrency, setNewConcurrency] = useState(5);
   const [newCollectionsFirst, setNewCollectionsFirst] = useState(true);
   const [newExcludeSkus, setNewExcludeSkus] = useState('');
-  const [newOverwrite, setNewOverwrite] = useState<string[]>([]);
-  const [newLimit, setNewLimit] = useState(0);
 
-  const [status, setStatus] = useState('');
+  const [statusMsg, setStatusMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  // Load campaigns + field defs on mount
-  useEffect(() => {
-    void loadCampaigns();
-    void loadFieldDefs();
-  }, []);
+  useEffect(() => { void loadCampaigns(); void loadFieldDefs(); }, []);
 
-  // Auto-poll selected campaign
   useEffect(() => {
     if (!selectedId) return;
     void loadDetail(selectedId);
@@ -102,7 +137,6 @@ export default function RunPage() {
     return () => clearInterval(interval);
   }, [selectedId, itemsPage, itemsStatus]);
 
-  // Scroll log to bottom on new entries
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [detail?.logs.length]);
@@ -123,7 +157,7 @@ export default function RunPage() {
 
   const loadDetail = async (id: string): Promise<void> => {
     try {
-      const res = await apiFetch<{ campaign: Campaign; logs: LogEntry[]; itemCounts: any[] }>(`/run-campaigns/${id}`);
+      const res = await apiFetch<{ campaign: Campaign; logs: LogEntry[]; itemCounts: { status: string; _count: { status: number } }[] }>(`/run-campaigns/${id}`);
       setDetail(res);
       setCampaigns((prev) => prev.map((c) => c.id === id ? res.campaign : c));
     } catch { /* ignore */ }
@@ -138,17 +172,24 @@ export default function RunPage() {
     } catch { /* ignore */ }
   };
 
+  // Auto-fill name when scope changes (only if not manually edited)
+  const handleScopeChange = (value: number): void => {
+    setNewScope(value);
+    const scope = SCOPES.find((s) => s.value === value);
+    if (scope) setNewName(scope.tag);
+  };
+
   const createCampaign = async (): Promise<void> => {
-    if (!newName.trim()) { setStatus('Angiv et navn'); return; }
-    if (newFields.length === 0) { setStatus('Vælg mindst ét felt'); return; }
+    if (newFields.length === 0) { setStatusMsg('Vælg mindst ét felt at generere'); return; }
+    const name = newName.trim() || (SCOPES.find((s) => s.value === newScope)?.tag ?? 'Kørsel');
     try {
       setLoading(true);
-      setStatus('Opretter kampagne...');
+      setStatusMsg('Opretter kørsel...');
       const excludeSkus = newExcludeSkus.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
       const res = await apiFetch<{ campaign: Campaign }>('/run-campaigns', {
         method: 'POST',
         body: JSON.stringify({
-          name: newName.trim(),
+          name,
           fieldsJson: newFields,
           batchSize: newBatchSize,
           concurrency: newConcurrency,
@@ -159,19 +200,19 @@ export default function RunPage() {
       });
       const campaign = res.campaign;
 
-      setStatus('Populerer produkter...');
+      setStatusMsg('Henter produkter...');
       const popRes = await apiFetch<{ total: number; withCollections: number; withoutCollections: number }>(
         `/run-campaigns/${campaign.id}/populate`,
-        { method: 'POST', body: JSON.stringify({ limit: newLimit }) },
+        { method: 'POST', body: JSON.stringify({ limit: newScope }) },
       );
-      setStatus(`Klar: ${popRes.total} produkter (${popRes.withCollections} med kollektioner, ${popRes.withoutCollections} uden)`);
+      setStatusMsg(`Klar: ${popRes.total.toLocaleString('da-DK')} produkter indlæst`);
 
       setShowCreate(false);
-      setNewName(''); setNewFields([]); setNewOverwrite([]);
+      setNewName(''); setNewFields([]); setNewOverwrite([]); setNewScope(100);
       await loadCampaigns();
       setSelectedId(campaign.id);
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Fejl ved oprettelse');
+      setStatusMsg(err instanceof Error ? err.message : 'Fejl ved oprettelse');
     } finally {
       setLoading(false);
     }
@@ -180,12 +221,11 @@ export default function RunPage() {
   const startCampaign = async (id: string): Promise<void> => {
     try {
       setLoading(true);
-      setStatus('Starter kørsel...');
       await apiFetch(`/run-campaigns/${id}/start`, { method: 'POST' });
-      setStatus('Kørsel startet');
+      setStatusMsg('');
       await loadDetail(id);
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Fejl');
+      setStatusMsg(err instanceof Error ? err.message : 'Fejl');
     } finally {
       setLoading(false);
     }
@@ -194,39 +234,34 @@ export default function RunPage() {
   const pauseCampaign = async (id: string): Promise<void> => {
     try {
       await apiFetch(`/run-campaigns/${id}/pause`, { method: 'POST' });
-      setStatus('Sat på pause');
       await loadDetail(id);
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Fejl');
+      setStatusMsg(err instanceof Error ? err.message : 'Fejl');
     }
   };
 
   const deleteCampaign = async (id: string): Promise<void> => {
-    if (!confirm('Slet kampagnen og alle dens data?')) return;
+    if (!confirm('Slet denne kørsel og alle dens data?')) return;
     try {
       await apiFetch(`/run-campaigns/${id}`, { method: 'DELETE' });
       setCampaigns((prev) => prev.filter((c) => c.id !== id));
       if (selectedId === id) { setSelectedId(null); setDetail(null); }
-      setStatus('Kampagne slettet');
+      setStatusMsg('');
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : 'Fejl');
+      setStatusMsg(err instanceof Error ? err.message : 'Fejl');
     }
   };
 
   const skipItem = async (campaignId: string, itemId: string): Promise<void> => {
     try {
-      await apiFetch(`/run-campaigns/${campaignId}/items/${itemId}`, {
-        method: 'PATCH', body: JSON.stringify({ status: 'skipped' }),
-      });
+      await apiFetch(`/run-campaigns/${campaignId}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify({ status: 'skipped' }) });
       await loadItems(campaignId, itemsPage, itemsStatus);
     } catch { /* ignore */ }
   };
 
   const resetItem = async (campaignId: string, itemId: string): Promise<void> => {
     try {
-      await apiFetch(`/run-campaigns/${campaignId}/items/${itemId}`, {
-        method: 'PATCH', body: JSON.stringify({ status: 'pending' }),
-      });
+      await apiFetch(`/run-campaigns/${campaignId}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify({ status: 'pending' }) });
       await loadItems(campaignId, itemsPage, itemsStatus);
     } catch { /* ignore */ }
   };
@@ -234,189 +269,317 @@ export default function RunPage() {
   const campaign = detail?.campaign ?? null;
   const logs = detail?.logs ?? [];
   const progressPct = campaign ? pct(campaign.doneItems + campaign.skippedItems, campaign.totalItems) : 0;
+  const pendingItems = campaign ? campaign.totalItems - campaign.doneItems - campaign.failedItems - campaign.skippedItems : 0;
 
   return (
     <div className="flex h-full min-h-0 gap-4">
 
-      {/* ── Left: Campaign list ── */}
+      {/* ── Left sidebar ── */}
       <div className="w-72 shrink-0 flex flex-col gap-3">
-        <div className="ep-card p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h1 className="text-sm font-semibold text-slate-800">Kørselskampagner</h1>
-            <button className="ep-btn-primary text-xs px-2 py-1" onClick={() => setShowCreate(true)}>+ Ny</button>
-          </div>
-          {campaigns.length === 0 && (
-            <p className="text-xs text-slate-400">Ingen kampagner endnu. Opret en ny for at starte udrulning.</p>
-          )}
-          <div className="space-y-1.5">
-            {campaigns.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => { setSelectedId(c.id); setItemsPage(1); setItemsStatus('all'); }}
-                className={`w-full text-left rounded-lg px-3 py-2.5 transition text-sm border ${selectedId === c.id ? 'border-indigo-200 bg-indigo-50' : 'border-transparent hover:bg-slate-50'}`}
-              >
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="font-medium text-slate-800 truncate">{c.name}</span>
-                  <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium ${STATUS_COLOR[c.status] ?? 'bg-slate-100 text-slate-600'}`}>
-                    {STATUS_DK[c.status] ?? c.status}
-                  </span>
-                </div>
-                <div className="text-xs text-slate-400">
-                  {c.totalItems > 0 ? `${c.doneItems}/${c.totalItems} behandlet` : 'Ikke populeret'}
-                </div>
-                {c.totalItems > 0 && (
-                  <div className="mt-1.5 h-1 w-full rounded-full bg-slate-200">
-                    <div className="h-1 rounded-full bg-indigo-500 transition-all" style={{ width: `${pct(c.doneItems + c.skippedItems, c.totalItems)}%` }} />
+
+        {/* New campaign button */}
+        <button
+          onClick={() => { setShowCreate(true); setSelectedId(null); setDetail(null); }}
+          className="ep-btn-primary w-full py-2.5 text-sm font-medium"
+        >
+          + Ny kørsel
+        </button>
+
+        {/* Campaign list */}
+        <div className="ep-card flex-1 flex flex-col overflow-hidden">
+          {campaigns.length === 0 ? (
+            <div className="p-6 text-center">
+              <div className="text-3xl mb-3">🚀</div>
+              <p className="text-sm font-medium text-slate-700 mb-1">Ingen kørsler endnu</p>
+              <p className="text-xs text-slate-400">Opret din første kørsel for at starte AI-udrulningen af produkttekster.</p>
+            </div>
+          ) : (
+            <div className="overflow-y-auto flex-1 p-2 space-y-1">
+              {campaigns.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => { setSelectedId(c.id); setShowCreate(false); setItemsPage(1); setItemsStatus('all'); }}
+                  className={`w-full text-left rounded-lg px-3 py-3 transition border ${selectedId === c.id ? 'border-indigo-300 bg-indigo-50' : 'border-transparent hover:bg-slate-50'}`}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <span className="font-medium text-slate-800 text-sm truncate">{c.name}</span>
+                    <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium ${STATUS_COLOR[c.status] ?? 'bg-slate-100 text-slate-600'}`}>
+                      {STATUS_DK[c.status] ?? c.status}
+                    </span>
                   </div>
-                )}
-              </button>
-            ))}
-          </div>
+                  {c.totalItems > 0 ? (
+                    <>
+                      <div className="flex justify-between text-xs text-slate-400 mb-1">
+                        <span>{c.doneItems.toLocaleString('da-DK')} / {c.totalItems.toLocaleString('da-DK')}</span>
+                        <span>{pct(c.doneItems + c.skippedItems, c.totalItems)}%</span>
+                      </div>
+                      <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+                        <div
+                          className={`h-1.5 rounded-full transition-all ${c.status === 'done' ? 'bg-emerald-500' : c.status === 'failed' ? 'bg-red-400' : 'bg-indigo-500'}`}
+                          style={{ width: `${pct(c.doneItems + c.skippedItems, c.totalItems)}%` }}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <span className="text-xs text-slate-400">Klar til start</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {status && (
-          <div className="ep-card px-3 py-2 text-xs text-slate-600">{status}</div>
+        {statusMsg && (
+          <div className="ep-card px-3 py-2 text-xs text-slate-600">{statusMsg}</div>
         )}
       </div>
 
-      {/* ── Right: Campaign detail ── */}
+      {/* ── Main area ── */}
       <div className="flex-1 min-w-0 flex flex-col gap-3">
-        {!campaign && !showCreate && (
-          <div className="ep-card p-8 text-center text-slate-400 text-sm">
-            Vælg en kampagne til venstre, eller opret en ny.
-          </div>
-        )}
 
-        {/* Create form */}
+        {/* ── Create form ── */}
         {showCreate && (
-          <div className="ep-card p-5 space-y-4">
+          <div className="ep-card p-6 space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-slate-800">Ny kørselskampagne</h2>
-              <button onClick={() => setShowCreate(false)} className="text-xs text-slate-400 hover:text-slate-600">Annuller</button>
+              <div>
+                <h2 className="text-base font-semibold text-slate-800">Ny kørsel</h2>
+                <p className="text-sm text-slate-400 mt-0.5">Vælg omfang, felter og start AI-generering</p>
+              </div>
+              <button onClick={() => setShowCreate(false)} className="text-sm text-slate-400 hover:text-slate-600">Annuller</button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <label className="text-sm">
-                <span className="font-medium text-slate-700 block mb-1">Navn</span>
-                <input className="ep-input" placeholder="fx Første store udrulning" value={newName} onChange={(e) => setNewName(e.target.value)} />
-              </label>
-
-              <label className="text-sm">
-                <span className="font-medium text-slate-700 block mb-1">Batch-størrelse <span className="text-slate-400">(produkter pr. batch)</span></span>
-                <input className="ep-input" type="number" min={1} max={200} value={newBatchSize} onChange={(e) => setNewBatchSize(Number(e.target.value))} />
-              </label>
-
-              <label className="text-sm">
-                <span className="font-medium text-slate-700 block mb-1">Test-grænse <span className="text-slate-400">(0 = alle produkter)</span></span>
-                <input className="ep-input" type="number" min={0} value={newLimit} onChange={(e) => setNewLimit(Number(e.target.value))} placeholder="100 for testrun" />
-              </label>
-
-              <label className="text-sm">
-                <span className="font-medium text-slate-700 block mb-1">Parallelitet</span>
-                <input className="ep-input" type="number" min={1} max={10} value={newConcurrency} onChange={(e) => setNewConcurrency(Number(e.target.value))} />
-              </label>
-            </div>
-
+            {/* Step 1: Scope */}
             <div>
-              <span className="text-sm font-medium text-slate-700 block mb-2">Felter der skal genereres</span>
-              {fieldDefs.length === 0 && <p className="text-xs text-slate-400">Ingen felter fundet. Opret felter under Opsætning → Felter.</p>}
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                {fieldDefs.map((fd) => (
-                  <label key={fd.id} className="flex items-start gap-2 text-sm cursor-pointer select-none rounded-lg border border-slate-200 px-3 py-2 hover:bg-slate-50 transition">
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 shrink-0"
-                      checked={newFields.includes(fd.id)}
-                      onChange={(e) => setNewFields((prev) => e.target.checked ? [...prev, fd.id] : prev.filter((x) => x !== fd.id))}
-                    />
-                    <div>
-                      <div className="font-medium text-slate-700">{fd.label}</div>
-                      <div className="text-xs text-slate-400">{fd.type}</div>
-                      {newFields.includes(fd.id) && (
-                        <label className="flex items-center gap-1 mt-1 text-xs text-slate-500 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={newOverwrite.includes(fd.id)}
-                            onChange={(e) => setNewOverwrite((prev) => e.target.checked ? [...prev, fd.id] : prev.filter((x) => x !== fd.id))}
-                          />
-                          Overskriv eksisterende
-                        </label>
-                      )}
+              <p className="text-sm font-semibold text-slate-700 mb-3">
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold mr-2">1</span>
+                Vælg omfang
+              </p>
+              <div className="grid grid-cols-3 gap-3">
+                {SCOPES.map((scope) => (
+                  <button
+                    key={scope.value}
+                    onClick={() => handleScopeChange(scope.value)}
+                    className={`rounded-xl border-2 p-4 text-left transition-all ${newScope === scope.value ? scope.activeColor : 'border-slate-200 hover:border-slate-300 bg-white'}`}
+                  >
+                    <div className={`inline-block text-xs font-semibold rounded-full px-2 py-0.5 mb-2 ${newScope === scope.value ? scope.tagColor : 'bg-slate-100 text-slate-500'}`}>
+                      {scope.tag}
                     </div>
-                  </label>
+                    <div className={`text-sm font-bold mb-1 ${newScope === scope.value ? '' : 'text-slate-700'}`}>{scope.label}</div>
+                    <div className="text-xs text-slate-400">{scope.description}</div>
+                  </button>
                 ))}
               </div>
             </div>
 
+            {/* Step 2: Fields */}
             <div>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="checkbox" checked={newCollectionsFirst} onChange={(e) => setNewCollectionsFirst(e.target.checked)} />
-                <span className="font-medium text-slate-700">Kollektions-produkter først</span>
-                <span className="text-slate-400">(produkter tilknyttet mindst én kollektion prioriteres)</span>
-              </label>
+              <p className="text-sm font-semibold text-slate-700 mb-3">
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold mr-2">2</span>
+                Vælg felter der skal genereres
+              </p>
+              {fieldDefs.length === 0 ? (
+                <p className="text-xs text-slate-400 p-3 bg-slate-50 rounded-lg">Ingen felter fundet. Opret felter under Opsætning → Felter.</p>
+              ) : (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {fieldDefs.map((fd) => {
+                    const checked = newFields.includes(fd.id);
+                    return (
+                      <label
+                        key={fd.id}
+                        className={`rounded-lg border-2 px-3 py-2.5 cursor-pointer select-none transition-all ${checked ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 shrink-0 accent-indigo-600"
+                            checked={checked}
+                            onChange={(e) => setNewFields((prev) => e.target.checked ? [...prev, fd.id] : prev.filter((x) => x !== fd.id))}
+                          />
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium text-slate-700 leading-tight">{fd.label}</div>
+                            <div className="text-xs text-slate-400">{fd.type}</div>
+                          </div>
+                        </div>
+                        {checked && (
+                          <label className="flex items-center gap-1.5 mt-2 pl-5 text-xs text-slate-500 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="accent-amber-500"
+                              checked={newOverwrite.includes(fd.id)}
+                              onChange={(e) => setNewOverwrite((prev) => e.target.checked ? [...prev, fd.id] : prev.filter((x) => x !== fd.id))}
+                            />
+                            <span className={newOverwrite.includes(fd.id) ? 'text-amber-600 font-medium' : ''}>
+                              Overskriv eksisterende indhold
+                            </span>
+                          </label>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
+            {/* Step 3: Name */}
             <div>
-              <label className="text-sm">
-                <span className="font-medium text-slate-700 block mb-1">Ekskluder SKU'er <span className="text-slate-400">(ét pr. linje eller kommasepareret)</span></span>
-                <textarea className="ep-input h-20 font-mono text-xs" placeholder="SKU-001&#10;SKU-002" value={newExcludeSkus} onChange={(e) => setNewExcludeSkus(e.target.value)} />
-              </label>
+              <p className="text-sm font-semibold text-slate-700 mb-3">
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold mr-2">3</span>
+                Giv kørslen et navn <span className="text-slate-400 font-normal">(valgfrit)</span>
+              </p>
+              <input
+                className="ep-input max-w-sm"
+                placeholder={SCOPES.find((s) => s.value === newScope)?.tag ?? 'Kørsel'}
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+              />
             </div>
 
-            <button className="ep-btn-primary" onClick={() => void createCampaign()} disabled={loading}>
-              {loading ? 'Opretter...' : 'Opret og populer kampagne'}
+            {/* Advanced settings */}
+            <div>
+              <button
+                className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-600 transition"
+                onClick={() => setShowAdvanced((v) => !v)}
+              >
+                <span className="text-xs">{showAdvanced ? '▼' : '▶'}</span>
+                Avancerede indstillinger
+              </button>
+              {showAdvanced && (
+                <div className="mt-3 p-4 bg-slate-50 rounded-xl space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <label className="text-sm">
+                      <span className="font-medium text-slate-700 block mb-1">Batch-størrelse</span>
+                      <input className="ep-input" type="number" min={1} max={200} value={newBatchSize} onChange={(e) => setNewBatchSize(Number(e.target.value))} />
+                      <span className="text-xs text-slate-400">Produkter pr. AI-kald (standard: 50)</span>
+                    </label>
+                    <label className="text-sm">
+                      <span className="font-medium text-slate-700 block mb-1">Parallelitet</span>
+                      <input className="ep-input" type="number" min={1} max={10} value={newConcurrency} onChange={(e) => setNewConcurrency(Number(e.target.value))} />
+                      <span className="text-xs text-slate-400">Samtidige processer (standard: 5)</span>
+                    </label>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="checkbox" className="accent-indigo-600" checked={newCollectionsFirst} onChange={(e) => setNewCollectionsFirst(e.target.checked)} />
+                    <span className="font-medium text-slate-700">Kollektions-produkter først</span>
+                    <span className="text-slate-400 text-xs">(produkter i kollektioner prioriteres)</span>
+                  </label>
+                  <label className="text-sm">
+                    <span className="font-medium text-slate-700 block mb-1">Ekskluder SKU'er</span>
+                    <textarea
+                      className="ep-input h-20 font-mono text-xs"
+                      placeholder="SKU-001&#10;SKU-002"
+                      value={newExcludeSkus}
+                      onChange={(e) => setNewExcludeSkus(e.target.value)}
+                    />
+                    <span className="text-xs text-slate-400">Ét pr. linje eller kommasepareret</span>
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {/* Submit */}
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                className="ep-btn-primary px-6 py-2.5 text-sm font-semibold disabled:opacity-50"
+                onClick={() => void createCampaign()}
+                disabled={loading || newFields.length === 0}
+              >
+                {loading ? 'Opretter...' : `Opret og hent ${newScope === 0 ? 'alle' : newScope.toLocaleString('da-DK')} produkter`}
+              </button>
+              {newFields.length === 0 && (
+                <span className="text-xs text-slate-400">Vælg mindst ét felt ovenfor</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Empty state ── */}
+        {!campaign && !showCreate && (
+          <div className="ep-card p-12 text-center flex-1 flex flex-col items-center justify-center">
+            <div className="text-4xl mb-4">⚡</div>
+            <h3 className="text-base font-semibold text-slate-700 mb-2">Klar til at køre AI-generering</h3>
+            <p className="text-sm text-slate-400 max-w-sm mb-6">
+              Opret en kørsel for at generere AI-tekster for alle ~134.000 produkter.
+              Start med 100 for at tjekke kvaliteten, og skaler op når du er tilfreds.
+            </p>
+            <button
+              className="ep-btn-primary px-5 py-2.5 text-sm font-semibold"
+              onClick={() => setShowCreate(true)}
+            >
+              + Opret første kørsel
             </button>
           </div>
         )}
 
+        {/* ── Campaign detail ── */}
         {campaign && (
           <>
-            {/* Campaign header */}
-            <div className="ep-card p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
+            {/* Header */}
+            <div className="ep-card p-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2.5 mb-1.5">
                     <h2 className="text-base font-semibold text-slate-800">{campaign.name}</h2>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[campaign.status] ?? 'bg-slate-100 text-slate-600'}`}>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLOR[campaign.status] ?? 'bg-slate-100 text-slate-600'}`}>
                       {STATUS_DK[campaign.status] ?? campaign.status}
                     </span>
                   </div>
-                  <div className="flex flex-wrap gap-4 text-xs text-slate-500">
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
+                    {campaign.totalItems > 0 && (
+                      <span className="font-medium text-slate-600">{scopeLabel(campaign.totalItems)}</span>
+                    )}
                     <span>Oprettet {fmtDate(campaign.createdAt)}</span>
                     {campaign.startedAt && <span>Startet {fmtDate(campaign.startedAt)}</span>}
                     {campaign.completedAt && <span>Færdig {fmtDate(campaign.completedAt)}</span>}
-                    <span>Batch {campaign.batchSize}</span>
-                    <span>{campaign.collectionsFirst ? 'Kollektioner først' : 'Tilfældig rækkefølge'}</span>
                   </div>
                 </div>
+
+                {/* Action buttons */}
                 <div className="flex items-center gap-2 shrink-0">
                   {(campaign.status === 'draft' || campaign.status === 'paused' || campaign.status === 'failed') && (
-                    <button className="ep-btn-primary text-sm" onClick={() => void startCampaign(campaign.id)} disabled={loading}>
-                      {campaign.status === 'draft' ? '▶ Start' : '▶ Genoptag'}
+                    <button
+                      className="ep-btn-primary px-5 py-2 text-sm font-semibold"
+                      onClick={() => void startCampaign(campaign.id)}
+                      disabled={loading}
+                    >
+                      {campaign.status === 'draft' ? '▶  Start kørsel' : '▶  Genoptag'}
                     </button>
                   )}
                   {campaign.status === 'running' && (
-                    <button className="ep-btn-secondary text-sm" onClick={() => void pauseCampaign(campaign.id)}>
-                      ⏸ Pause
+                    <button
+                      className="ep-btn-secondary px-4 py-2 text-sm"
+                      onClick={() => void pauseCampaign(campaign.id)}
+                    >
+                      ⏸  Sæt på pause
                     </button>
                   )}
                   {campaign.status !== 'running' && (
-                    <button className="text-xs text-red-500 hover:text-red-700" onClick={() => void deleteCampaign(campaign.id)}>
+                    <button
+                      className="text-xs text-slate-400 hover:text-red-600 transition px-2 py-1.5 rounded"
+                      onClick={() => void deleteCampaign(campaign.id)}
+                    >
                       Slet
                     </button>
                   )}
                 </div>
               </div>
 
-              {/* Progress bar */}
+              {/* Progress */}
               {campaign.totalItems > 0 && (
-                <div className="mt-4">
-                  <div className="flex justify-between text-xs text-slate-500 mb-1">
-                    <span>{campaign.doneItems} behandlet · {campaign.failedItems} fejlet · {campaign.skippedItems} sprunget over · {campaign.totalItems - campaign.doneItems - campaign.failedItems - campaign.skippedItems} afventer</span>
-                    <span className="font-medium text-slate-700">{progressPct}%</span>
+                <div className="mt-5">
+                  <div className="h-3 w-full rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                      className={`h-3 rounded-full transition-all duration-700 ${campaign.status === 'done' ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                      style={{ width: `${progressPct}%` }}
+                    />
                   </div>
-                  <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
-                    <div className="h-2 rounded-full bg-indigo-500 transition-all duration-500" style={{ width: `${progressPct}%` }} />
+                  <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 mt-2 text-xs">
+                    <div className="flex gap-4 text-slate-500">
+                      <span><span className="font-semibold text-emerald-600">{campaign.doneItems.toLocaleString('da-DK')}</span> behandlet</span>
+                      {campaign.failedItems > 0 && <span><span className="font-semibold text-red-500">{campaign.failedItems.toLocaleString('da-DK')}</span> fejlet</span>}
+                      {campaign.skippedItems > 0 && <span><span className="font-semibold text-slate-400">{campaign.skippedItems.toLocaleString('da-DK')}</span> sprunget over</span>}
+                      {pendingItems > 0 && <span><span className="font-semibold text-slate-600">{pendingItems.toLocaleString('da-DK')}</span> afventer</span>}
+                    </div>
+                    <span className="font-bold text-slate-700 text-sm">{progressPct}%</span>
                   </div>
                 </div>
               )}
@@ -426,19 +589,23 @@ export default function RunPage() {
             <div className="flex gap-3 min-h-0 flex-1">
 
               {/* Items table */}
-              <div className="flex-1 min-w-0 ep-card flex flex-col">
-                <div className="p-3 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                  <span className="text-sm font-semibold text-slate-700">Produkter ({itemsTotal})</span>
-                  <div className="flex items-center gap-2">
-                    <select className="ep-select text-xs" value={itemsStatus} onChange={(e) => { setItemsStatus(e.target.value); setItemsPage(1); }}>
-                      <option value="all">Alle</option>
-                      <option value="pending">Afventer</option>
-                      <option value="processing">Behandler</option>
-                      <option value="done">Færdige</option>
-                      <option value="failed">Fejlede</option>
-                      <option value="skipped">Sprunget over</option>
-                    </select>
-                  </div>
+              <div className="flex-1 min-w-0 ep-card flex flex-col overflow-hidden">
+                <div className="p-3 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap shrink-0">
+                  <span className="text-sm font-semibold text-slate-700">
+                    Produkter {itemsTotal > 0 && <span className="font-normal text-slate-400">({itemsTotal.toLocaleString('da-DK')})</span>}
+                  </span>
+                  <select
+                    className="ep-select text-xs"
+                    value={itemsStatus}
+                    onChange={(e) => { setItemsStatus(e.target.value); setItemsPage(1); }}
+                  >
+                    <option value="all">Alle</option>
+                    <option value="pending">Afventer</option>
+                    <option value="processing">Behandler</option>
+                    <option value="done">Færdige</option>
+                    <option value="failed">Fejlede</option>
+                    <option value="skipped">Sprunget over</option>
+                  </select>
                 </div>
 
                 <div className="overflow-auto flex-1">
@@ -460,9 +627,9 @@ export default function RunPage() {
                     <tbody>
                       {items.map((item) => (
                         <tr key={item.id} className="border-b border-slate-50 hover:bg-slate-50 transition">
-                          <td className="py-1.5 px-3 text-slate-400">{item.sortOrder + 1}</td>
+                          <td className="py-1.5 px-3 text-slate-300">{item.sortOrder + 1}</td>
                           <td className="py-1.5 px-3 font-medium text-slate-700 max-w-[180px] truncate">{item.title ?? item.productId.slice(0, 8)}</td>
-                          <td className="py-1.5 px-3 font-mono text-slate-500">{item.sku ?? '—'}</td>
+                          <td className="py-1.5 px-3 font-mono text-slate-400">{item.sku ?? '—'}</td>
                           <td className="py-1.5 px-3">
                             <span className={`rounded-full px-1.5 py-0.5 text-xs font-medium ${STATUS_COLOR[item.status] ?? 'bg-slate-100 text-slate-500'}`}>
                               {STATUS_DK[item.status] ?? item.status}
@@ -472,8 +639,8 @@ export default function RunPage() {
                             const v = item.fieldsDoneJson?.[fid];
                             return (
                               <td key={fid} className="py-1.5 px-3 text-center">
-                                {v === 'done' ? <span className="text-green-600">✓</span>
-                                  : v === 'failed' ? <span className="text-red-500">✗</span>
+                                {v === 'done' ? <span className="text-emerald-500 font-bold">✓</span>
+                                  : v === 'failed' ? <span className="text-red-400">✗</span>
                                   : v === 'skipped' ? <span className="text-slate-300">–</span>
                                   : <span className="text-slate-200">·</span>}
                               </td>
@@ -481,22 +648,24 @@ export default function RunPage() {
                           })}
                           <td className="py-1.5 px-3 text-slate-400">{item.processedAt ? fmtDate(item.processedAt) : '—'}</td>
                           <td className="py-1.5 px-3">
-                            {item.status === 'pending' || item.status === 'failed' ? (
-                              <button className="text-slate-400 hover:text-amber-600 text-xs" onClick={() => void skipItem(campaign.id, item.id)} title="Spring over">↷</button>
+                            {(item.status === 'pending' || item.status === 'failed') ? (
+                              <button className="text-slate-300 hover:text-amber-500 transition text-sm" onClick={() => void skipItem(campaign.id, item.id)} title="Spring over">↷</button>
                             ) : item.status === 'skipped' ? (
-                              <button className="text-slate-400 hover:text-indigo-600 text-xs" onClick={() => void resetItem(campaign.id, item.id)} title="Nulstil">↺</button>
+                              <button className="text-slate-300 hover:text-indigo-500 transition text-sm" onClick={() => void resetItem(campaign.id, item.id)} title="Nulstil">↺</button>
                             ) : null}
                           </td>
                         </tr>
                       ))}
+                      {items.length === 0 && (
+                        <tr><td colSpan={10} className="py-8 text-center text-slate-300 text-xs">Ingen produkter endnu</td></tr>
+                      )}
                     </tbody>
                   </table>
                 </div>
 
-                {/* Pagination */}
                 {itemsTotal > 100 && (
-                  <div className="p-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                    <span>{(itemsPage - 1) * 100 + 1}–{Math.min(itemsPage * 100, itemsTotal)} af {itemsTotal}</span>
+                  <div className="p-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400 shrink-0">
+                    <span>{(itemsPage - 1) * 100 + 1}–{Math.min(itemsPage * 100, itemsTotal)} af {itemsTotal.toLocaleString('da-DK')}</span>
                     <div className="flex gap-1">
                       <button className="ep-btn-secondary px-2 py-0.5 text-xs" disabled={itemsPage === 1} onClick={() => setItemsPage((p) => p - 1)}>←</button>
                       <button className="ep-btn-secondary px-2 py-0.5 text-xs" disabled={itemsPage * 100 >= itemsTotal} onClick={() => setItemsPage((p) => p + 1)}>→</button>
@@ -506,24 +675,26 @@ export default function RunPage() {
               </div>
 
               {/* Log panel */}
-              <div className="w-96 shrink-0 ep-card flex flex-col">
-                <div className="p-3 border-b border-slate-100">
-                  <span className="text-sm font-semibold text-slate-700">Udrulningslog</span>
+              <div className="w-80 shrink-0 ep-card flex flex-col overflow-hidden">
+                <div className="p-3 border-b border-slate-100 shrink-0">
+                  <span className="text-sm font-semibold text-slate-700">Live-log</span>
                 </div>
                 <div className="flex-1 overflow-y-auto p-3 font-mono text-xs space-y-1 bg-slate-950 rounded-b-xl">
-                  {logs.length === 0 && (
-                    <span className="text-slate-500">Ingen log-poster endnu...</span>
+                  {logs.length === 0 ? (
+                    <span className="text-slate-600">Ingen aktivitet endnu...</span>
+                  ) : (
+                    [...logs].reverse().map((log) => (
+                      <div key={log.id} className={`leading-relaxed ${LOG_COLOR[log.level] ?? 'text-slate-500'}`}>
+                        <span className="text-slate-600 mr-1.5">{new Date(log.createdAt).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                        <span className="mr-1">{LOG_PREFIX[log.level]}</span>
+                        <span>{log.message}</span>
+                      </div>
+                    ))
                   )}
-                  {[...logs].reverse().map((log) => (
-                    <div key={log.id} className={`leading-relaxed ${LOG_COLOR[log.level] ?? 'text-slate-400'}`}>
-                      <span className="text-slate-600 mr-1">{new Date(log.createdAt).toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                      <span className="mr-1">{LOG_PREFIX[log.level]}</span>
-                      <span>{log.message}</span>
-                    </div>
-                  ))}
                   <div ref={logEndRef} />
                 </div>
               </div>
+
             </div>
           </>
         )}
