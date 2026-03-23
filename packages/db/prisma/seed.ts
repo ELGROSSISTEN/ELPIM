@@ -32,11 +32,10 @@ async function main(): Promise<void> {
 
   const organization = await db.organization.upsert({
     where: { id: 'org_demo_epim' },
-    update: { name: 'Demo Organization', stripeCustomerId: 'bootstrap_cus_org_demo_epim', cvrNumber: '10000001', type: 'regular' },
+    update: { name: 'Demo Organization', cvrNumber: '10000001', type: 'regular' },
     create: {
       id: 'org_demo_epim',
       name: 'Demo Organization',
-      stripeCustomerId: 'bootstrap_cus_org_demo_epim',
       cvrNumber: '10000001',
       type: 'regular',
     },
@@ -114,8 +113,6 @@ async function main(): Promise<void> {
     },
     create: {
       shopId: shop.id,
-      stripeCustomerId: `bootstrap_cus_${shop.id}`,
-      stripeSubscriptionId: `bootstrap_sub_${shop.id}`,
       status: 'active',
       basePriceMinor: 99900,
       includedUnitsPerMonth: 100,

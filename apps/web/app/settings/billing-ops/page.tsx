@@ -15,7 +15,6 @@ type LedgerRow = {
   vatAmountMinor: number;
   subtotalMinor: number;
   totalAmountMinor: number;
-  stripeInvoiceId: string | null;
   finalizedAt: string | null;
   shop: {
     id: string;
@@ -33,21 +32,6 @@ type LedgerResponse = {
     overageUnits: number;
   };
   rows: LedgerRow[];
-};
-
-type WebhookEvent = {
-  id: string;
-  eventId: string;
-  eventType: string;
-  status: string;
-  error: string | null;
-  receivedAt: string;
-  processedAt: string | null;
-};
-
-type WebhookResponse = {
-  count: number;
-  events: WebhookEvent[];
 };
 
 type BillingAuditLogRow = {
@@ -83,13 +67,10 @@ export default function BillingSettingsPage() {
   const [monthKey, setMonthKey] = useState(currentMonthKey());
   const [shopIdFilter, setShopIdFilter] = useState('');
   const [ledger, setLedger] = useState<LedgerResponse | null>(null);
-  const [events, setEvents] = useState<WebhookEvent[]>([]);
   const [auditRows, setAuditRows] = useState<BillingAuditLogRow[]>([]);
   const [loadingLedger, setLoadingLedger] = useState(false);
   const [runningClose, setRunningClose] = useState(false);
-  const [loadingEvents, setLoadingEvents] = useState(false);
   const [loadingAudit, setLoadingAudit] = useState(false);
-  const [retryingEventId, setRetryingEventId] = useState<string | null>(null);
   const [resendShopId, setResendShopId] = useState('');
   const [resendMonthKey, setResendMonthKey] = useState(currentMonthKey());
   const [resendKind, setResendKind] = useState<'included_reached_100' | 'overage_started'>('included_reached_100');
@@ -116,7 +97,7 @@ export default function BillingSettingsPage() {
   const closeMonth = async (finalize: boolean): Promise<void> => {
     try {
       setRunningClose(true);
-      setStatus(finalize ? 'Lukker måned og opretter Stripe fakturaer...' : 'Beregner måned uden finalisering...');
+      setStatus(finalize ? 'Lukker måned...' : 'Beregner måned uden finalisering...');
       const response = await apiFetch<{ count: number }>('/billing/close-month', {
         method: 'POST',
         body: JSON.stringify({ monthKey, finalize }),
@@ -127,20 +108,6 @@ export default function BillingSettingsPage() {
       setStatus(error instanceof Error ? error.message : 'Close-month fejlede.');
     } finally {
       setRunningClose(false);
-    }
-  };
-
-  const loadWebhookEvents = async (): Promise<void> => {
-    try {
-      setLoadingEvents(true);
-      setStatus('Henter Stripe webhook events...');
-      const response = await apiFetch<WebhookResponse>('/billing/webhook-events?provider=stripe&limit=100');
-      setEvents(response.events);
-      setStatus(`Webhook events hentet (${response.count}).`);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Kunne ikke hente webhook events.');
-    } finally {
-      setLoadingEvents(false);
     }
   };
 
@@ -155,23 +122,6 @@ export default function BillingSettingsPage() {
       setStatus(error instanceof Error ? error.message : 'Kunne ikke hente audit-log.');
     } finally {
       setLoadingAudit(false);
-    }
-  };
-
-  const retryWebhookEvent = async (id: string): Promise<void> => {
-    try {
-      setRetryingEventId(id);
-      setStatus('Retryer webhook event...');
-      await apiFetch<{ ok: boolean }>(`/billing/webhook-events/${id}/retry`, {
-        method: 'POST',
-        body: JSON.stringify({ force: false }),
-      });
-      setStatus('Webhook event retried.');
-      await loadWebhookEvents();
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Retry fejlede.');
-    } finally {
-      setRetryingEventId(null);
     }
   };
 
@@ -204,7 +154,7 @@ export default function BillingSettingsPage() {
     <div className="space-y-4">
       <div className="ep-card p-4 md:p-5">
         <h1 className="ep-title">Billing Ops</h1>
-        <p className="ep-subtitle mt-1">Månedslukning, Stripe fakturaoprettelse og webhook-overblik.</p>
+        <p className="ep-subtitle mt-1">Månedslukning og fakturaoverblik.</p>
       </div>
 
       <div className="ep-card p-4 md:p-5 grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
@@ -222,9 +172,6 @@ export default function BillingSettingsPage() {
           {loadingLedger ? 'Henter...' : 'Hent ledger'}
         </button>
 
-        <button className="ep-btn-secondary" onClick={() => void loadWebhookEvents()} disabled={loadingEvents}>
-          {loadingEvents ? 'Henter...' : 'Hent webhooks'}
-        </button>
         <button className="ep-btn-secondary" onClick={() => void loadAuditLog()} disabled={loadingAudit}>
           {loadingAudit ? 'Henter...' : 'Hent audit-log'}
         </button>
@@ -235,7 +182,7 @@ export default function BillingSettingsPage() {
           {runningClose ? 'Kører...' : 'Kør close-month preview'}
         </button>
         <button className="ep-btn-primary" onClick={() => void closeMonth(true)} disabled={runningClose}>
-          {runningClose ? 'Lukker...' : 'Luk måned + opret Stripe fakturaer'}
+          {runningClose ? 'Lukker...' : 'Luk måned (finaliser)'}
         </button>
       </div>
 
@@ -278,7 +225,6 @@ export default function BillingSettingsPage() {
                   <th className="py-2 pr-4">Overforbrug</th>
                   <th className="py-2 pr-4">Subtotal</th>
                   <th className="py-2 pr-4">Total</th>
-                  <th className="py-2 pr-4">Stripe invoice</th>
                   <th className="py-2 pr-4">Finalized</th>
                 </tr>
               </thead>
@@ -290,52 +236,7 @@ export default function BillingSettingsPage() {
                     <td className="py-2 pr-4">{row.overageUnits}</td>
                     <td className="py-2 pr-4">{toDkk(row.subtotalMinor)}</td>
                     <td className="py-2 pr-4">{toDkk(row.totalAmountMinor)}</td>
-                    <td className="py-2 pr-4 font-mono text-xs">{row.stripeInvoiceId ?? '-'}</td>
                     <td className="py-2 pr-4">{row.finalizedAt ? 'Ja' : 'Nej'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : null}
-
-      {events.length > 0 ? (
-        <div className="ep-card p-4 md:p-5 space-y-2">
-          <h2 className="text-sm font-semibold text-slate-800">Stripe webhook events</h2>
-          <div className="overflow-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-500 border-b">
-                  <th className="py-2 pr-4">Received</th>
-                  <th className="py-2 pr-4">Type</th>
-                  <th className="py-2 pr-4">Status</th>
-                  <th className="py-2 pr-4">Event ID</th>
-                  <th className="py-2 pr-4">Error</th>
-                  <th className="py-2 pr-4">Handling</th>
-                </tr>
-              </thead>
-              <tbody>
-                {events.map((event) => (
-                  <tr key={event.id} className="border-b border-slate-100">
-                    <td className="py-2 pr-4">{new Date(event.receivedAt).toLocaleString('da-DK')}</td>
-                    <td className="py-2 pr-4">{event.eventType}</td>
-                    <td className="py-2 pr-4">{event.status}</td>
-                    <td className="py-2 pr-4 font-mono text-xs">{event.eventId}</td>
-                    <td className="py-2 pr-4 text-red-700">{event.error ?? '-'}</td>
-                    <td className="py-2 pr-4">
-                      {event.status === 'failed' ? (
-                        <button
-                          className="ep-btn-secondary"
-                          onClick={() => void retryWebhookEvent(event.id)}
-                          disabled={retryingEventId === event.id}
-                        >
-                          {retryingEventId === event.id ? 'Retryer...' : 'Retry'}
-                        </button>
-                      ) : (
-                        '-'
-                      )}
-                    </td>
                   </tr>
                 ))}
               </tbody>

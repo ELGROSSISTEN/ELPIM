@@ -1,9 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { loadStripe } from '@stripe/stripe-js';
 import { apiFetch, getToken } from '../../lib/api';
 import { registerBackgroundActivityJobs } from '../../lib/background-activity';
 
@@ -24,8 +23,6 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
     return error.message || fallback;
   }
 };
-
-const STRIPE_PK = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
 
 export default function OnboardingPageWrapper() {
   return (
@@ -48,15 +45,8 @@ function OnboardingPage() {
   const [requestingSetup, setRequestingSetup] = useState(false);
   const [setupRequested, setSetupRequested] = useState(false);
 
-  // Checkout state
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const [checkoutError, setCheckoutError] = useState('');
-  const checkoutRef = useRef<HTMLDivElement>(null);
-  const embeddedCheckoutRef = useRef<{ destroy(): void } | null>(null);
-
   const [currentShop, setCurrentShop] = useState<CurrentShop>(null);
-  const [hasActiveAccess, setHasActiveAccess] = useState(false);
+  const hasActiveAccess = true;
 
   const signedIn = Boolean(getToken());
 
@@ -69,32 +59,14 @@ function OnboardingPage() {
   const refreshState = async (): Promise<void> => {
     if (!signedIn) { setLoading(false); return; }
     try {
-      const [shopRes, statusRes] = await Promise.all([
-        apiFetch<{ shop: CurrentShop }>('/shops/current').catch(() => ({ shop: null })),
-        apiFetch<{ hasAccess: boolean }>('/billing/status').catch(() => ({ hasAccess: false })),
-      ]);
+      const shopRes = await apiFetch<{ shop: CurrentShop }>('/shops/current').catch(() => ({ shop: null }));
       setCurrentShop(shopRes.shop);
-      setHasActiveAccess(statusRes.hasAccess);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => { document.title = 'Onboarding | ePIM'; void refreshState(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Auto-open checkout when subscription step becomes active
-  useEffect(() => {
-    if (!loading && state.signedIn && !state.hasActiveAccess && !checkoutOpen && !checkoutLoading) {
-      void openCheckout();
-    }
-  }, [loading, state.signedIn, state.hasActiveAccess]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Handle return from Stripe checkout
-  useEffect(() => {
-    if (searchParams.get('checkout') === 'complete') {
-      void refreshState();
-    }
-  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-redirect to dashboard if fully onboarded
   useEffect(() => {
@@ -108,48 +80,6 @@ function OnboardingPage() {
       setStatus('Abonnement kræves for at fortsætte. Fuldfør trin 2 nedenfor.');
     }
   }, [searchParams]);
-
-  // Cleanup embedded checkout on unmount
-  useEffect(() => {
-    return () => { embeddedCheckoutRef.current?.destroy(); };
-  }, []);
-
-  const openCheckout = async (): Promise<void> => {
-    if (!STRIPE_PK) {
-      setCheckoutError('Stripe er ikke konfigureret. Kontakt support.');
-      return;
-    }
-    try {
-      setCheckoutLoading(true);
-      setCheckoutError('');
-      const { clientSecret } = await apiFetch<{ clientSecret: string }>('/billing/checkout', { method: 'POST' });
-      const stripe = await loadStripe(STRIPE_PK);
-      if (!stripe) throw new Error('Stripe kunne ikke indlæses.');
-      // Destroy previous instance if any
-      embeddedCheckoutRef.current?.destroy();
-      const checkout = await stripe.initEmbeddedCheckout({ clientSecret });
-      setCheckoutOpen(true);
-      // Mount after React has rendered the container
-      setTimeout(() => {
-        if (checkoutRef.current) {
-          checkout.mount(checkoutRef.current);
-          embeddedCheckoutRef.current = checkout;
-        }
-      }, 50);
-    } catch (err) {
-      setCheckoutError(getErrorMessage(err, 'Kunne ikke åbne checkout. Prøv igen.'));
-    } finally {
-      setCheckoutLoading(false);
-    }
-  };
-
-  const closeCheckout = (): void => {
-    embeddedCheckoutRef.current?.destroy();
-    embeddedCheckoutRef.current = null;
-    setCheckoutOpen(false);
-    setCheckoutError('');
-    void refreshState();
-  };
 
   const connectShop = async (): Promise<void> => {
     if (!token.trim()) { setStatus('Indsæt et gyldigt Admin API token først.'); return; }
@@ -314,38 +244,16 @@ function OnboardingPage() {
           {/* Step 2: Subscription */}
           <StepCard
             step={2}
-            title={state.hasActiveAccess ? 'Abonnement aktivt' : 'Aktivér abonnement'}
-            done={state.hasActiveAccess}
-            active={state.signedIn && !state.hasActiveAccess}
+            title="Adgang aktiveret"
+            done={true}
+            active={false}
             icon={<svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>}
           >
-            {state.hasActiveAccess ? (
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/60">
-                  Aktivt
-                </span>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {checkoutLoading ? (
-                  <div className="flex items-center gap-2 py-6 text-sm text-slate-400">
-                    <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="31.4 31.4" strokeLinecap="round" /></svg>
-                    Indlæser betalingsformular…
-                  </div>
-                ) : checkoutError ? (
-                  <div className="space-y-3">
-                    <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-600">{checkoutError}</p>
-                    <button
-                      className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition"
-                      onClick={() => void openCheckout()}
-                    >
-                      Prøv igen
-                    </button>
-                  </div>
-                ) : null}
-                <div ref={checkoutRef} className={checkoutOpen ? 'rounded-xl overflow-hidden' : 'hidden'} />
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/60">
+                Aktivt
+              </span>
+            </div>
           </StepCard>
 
           {/* Step 3: Connect shop */}

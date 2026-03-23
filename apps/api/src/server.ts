@@ -32,7 +32,7 @@ import { hashPassword, verifyPassword } from './auth.js';
 import { aiQueue, altTextQueue, feedCrawlQueue, importQueue, syncQueue, webhookQueue } from './queue.js';
 import { createSnapshotAndLog } from './snapshot.js';
 import { buildBillingCloseBreakdown } from './billing-close.js';
-import { isUniqueConstraintError, verifyStripeWebhook } from './stripe-utils.js';
+import { isUniqueConstraintError } from './stripe-utils.js';
 
 const app = Fastify({ logger: true });
 
@@ -57,253 +57,6 @@ const hasProductCollectionTable = async (): Promise<boolean> => {
 const estimateOpenAiCost = (promptTokens: number, completionTokens: number): { usd: number; dkk: number } => {
   const usd = (promptTokens / 1000) * OPENAI_INPUT_USD_PER_1K + (completionTokens / 1000) * OPENAI_OUTPUT_USD_PER_1K;
   return { usd, dkk: usd * USD_TO_DKK };
-};
-
-type StripeInvoice = {
-  id: string;
-  status?: string | null;
-  hosted_invoice_url?: string | null;
-};
-
-type StripeCustomer = {
-  id: string;
-  email?: string | null;
-};
-
-type StripeSubscription = {
-  id: string;
-  status?: string | null;
-};
-
-const stripeRequest = async <T>(params: {
-  method?: 'POST' | 'GET';
-  path: string;
-  body?: URLSearchParams;
-  idempotencyKey?: string;
-}): Promise<T> => {
-  if (!env.STRIPE_SECRET_KEY) {
-    throw new Error('STRIPE_SECRET_KEY is not configured');
-  }
-
-  const method = params.method ?? 'POST';
-  const response = await fetch(`https://api.stripe.com/v1${params.path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
-      ...(params.idempotencyKey ? { 'Idempotency-Key': params.idempotencyKey } : {}),
-      ...(params.body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
-    },
-    body: params.body,
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Stripe request failed: ${response.status} ${text}`);
-  }
-
-  return (await response.json()) as T;
-};
-
-const createStripeCustomer = async (args: {
-  organizationId: string;
-  organizationName: string;
-  email?: string;
-}): Promise<StripeCustomer> => {
-  if (!env.STRIPE_SECRET_KEY) {
-    return { id: `bootstrap_cus_${args.organizationId}` };
-  }
-
-  const payload = new URLSearchParams();
-  payload.set('name', args.organizationName);
-  if (args.email) {
-    payload.set('email', args.email);
-  }
-  payload.set('metadata[organizationId]', args.organizationId);
-
-  return stripeRequest<StripeCustomer>({
-    path: '/customers',
-    body: payload,
-    idempotencyKey: `epim-org-customer-${args.organizationId}`,
-  });
-};
-
-const createStripeSubscription = async (args: {
-  shopId: string;
-  stripeCustomerId: string;
-}): Promise<StripeSubscription> => {
-  if (!env.STRIPE_SECRET_KEY || !env.STRIPE_BASE_PRICE_ID) {
-    return { id: `bootstrap_sub_${args.shopId}`, status: 'active' };
-  }
-
-  const payload = new URLSearchParams();
-  payload.set('customer', args.stripeCustomerId);
-  payload.set('items[0][price]', env.STRIPE_BASE_PRICE_ID);
-  payload.set('collection_method', 'charge_automatically');
-  payload.set('metadata[shopId]', args.shopId);
-
-  return stripeRequest<StripeSubscription>({
-    path: '/subscriptions',
-    body: payload,
-    idempotencyKey: `epim-shop-subscription-${args.shopId}`,
-  });
-};
-
-const ensureOrganizationStripeCustomer = async (organization: {
-  id: string;
-  name: string;
-  stripeCustomerId: string | null;
-}, defaultEmail?: string): Promise<string> => {
-  if (organization.stripeCustomerId) {
-    return organization.stripeCustomerId;
-  }
-
-  const customer = await createStripeCustomer({
-    organizationId: organization.id,
-    organizationName: organization.name,
-    email: defaultEmail,
-  });
-
-  await prisma.organization.update({
-    where: { id: organization.id },
-    data: { stripeCustomerId: customer.id },
-  });
-
-  return customer.id;
-};
-
-const processStripeEvent = async (event: {
-  type: string;
-  data?: { object?: any };
-}): Promise<void> => {
-  const object = event.data?.object ?? {};
-
-  if (event.type === 'invoice.paid') {
-    const invoiceId = object.id as string | undefined;
-    const monthKey = object.metadata?.monthKey as string | undefined;
-    const shopId = object.metadata?.shopId as string | undefined;
-    const stripeSubscriptionId = typeof object.subscription === 'string' ? object.subscription : undefined;
-
-    if (invoiceId) {
-      await prisma.billingLedgerMonth.updateMany({
-        where: {
-          OR: [
-            { stripeInvoiceId: invoiceId },
-            ...(shopId && monthKey ? [{ shopId, monthKey }] : []),
-          ],
-        },
-        data: {
-          stripeInvoiceId: invoiceId,
-          finalizedAt: new Date(),
-        },
-      });
-    }
-
-    if (stripeSubscriptionId) {
-      await prisma.shopSubscription.updateMany({
-        where: { stripeSubscriptionId },
-        data: { status: 'active' },
-      });
-    }
-  }
-
-  if (event.type === 'invoice.payment_failed') {
-    const stripeSubscriptionId = typeof object.subscription === 'string' ? object.subscription : undefined;
-    if (stripeSubscriptionId) {
-      await prisma.shopSubscription.updateMany({
-        where: { stripeSubscriptionId },
-        data: { status: 'past_due' },
-      });
-    }
-  }
-
-  if (event.type === 'customer.subscription.created') {
-    const stripeCustomerId = typeof object.customer === 'string' ? object.customer : undefined;
-    if (stripeCustomerId) {
-      const org = await prisma.organization.findFirst({
-        where: { stripeCustomerId },
-        include: {
-          memberships: {
-            where: { role: 'owner' },
-            include: { user: { select: { email: true, firstName: true } } },
-            take: 1,
-          },
-        },
-      });
-      const owner = org?.memberships?.[0]?.user;
-      if (owner?.email) {
-        const firstName = owner.firstName ?? 'der';
-        const appUrl = env.APP_BASE_URL ?? 'https://mit.epim.dk';
-        const html = `<!DOCTYPE html>
-<html lang="da">
-<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width,initial-scale=1.0" /></head>
-<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:40px 20px;">
-    <tr><td align="center">
-      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
-        <tr>
-          <td style="background:linear-gradient(135deg,#4f46e5,#6366f1);padding:32px 40px;">
-            <div style="font-size:24px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">ePIM</div>
-            <div style="font-size:13px;color:rgba(255,255,255,0.75);margin-top:4px;">Product Information Manager</div>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:40px 40px 32px;">
-            <h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#1e293b;line-height:1.3;">Velkommen til ePIM, ${firstName}! 🎉</h1>
-            <p style="margin:0 0 16px;font-size:15px;color:#475569;line-height:1.6;">Tak fordi du har tegnet et abonnement. Vi glæder os til at hjælpe dig med at holde dine produktdata opdaterede og klar til Shopify.</p>
-            <p style="margin:0 0 8px;font-size:15px;color:#475569;line-height:1.6;"><strong style="color:#1e293b;">Hvad kan du nu?</strong></p>
-            <ul style="margin:0 0 24px;padding-left:20px;font-size:15px;color:#475569;line-height:1.8;">
-              <li>Forbind din Shopify-butik og synkronisér produkter</li>
-              <li>Opret felter og definer din produktstruktur</li>
-              <li>Brug AI til at generere og forbedre produktbeskrivelser</li>
-              <li>Hold alt synkroniseret automatisk med Shopify</li>
-            </ul>
-            <table cellpadding="0" cellspacing="0">
-              <tr>
-                <td style="border-radius:10px;background:linear-gradient(135deg,#4f46e5,#6366f1);">
-                  <a href="${appUrl}/onboarding" style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:10px;">
-                    Gå til opsætning →
-                  </a>
-                </td>
-              </tr>
-            </table>
-            <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;">Har du spørgsmål? Svar blot på denne mail, så hjælper vi dig.</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
-            <p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.5;"><strong>ePIM &middot; epim.dk</strong></p>
-          </td>
-        </tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`;
-        await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${env.RESEND_API_KEY ?? ''}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from: env.EMAIL_FROM, to: owner.email, subject: 'Velkommen til ePIM — dit abonnement er aktivt', html }),
-        }).catch(() => {});
-      }
-    }
-  }
-
-  if (event.type.startsWith('customer.subscription.')) {
-    const stripeSubscriptionId = object.id as string | undefined;
-    const status = object.status as string | undefined;
-
-    const mappedStatus =
-      status === 'trialing' || status === 'active' || status === 'past_due' || status === 'canceled' || status === 'incomplete'
-        ? status
-        : undefined;
-
-    if (stripeSubscriptionId && mappedStatus) {
-      await prisma.shopSubscription.updateMany({
-        where: { stripeSubscriptionId },
-        data: { status: mappedStatus },
-      });
-    }
-  }
 };
 
 const sendMagicLink = async (opts: {
@@ -425,8 +178,6 @@ const applyAdminShopPlan = async (args: { shopId: string; plan: 'standard' | 'un
     await prisma.shopSubscription.upsert({
       where: { shopId: args.shopId },
       update: {
-        stripeCustomerId: `unlimited_cus_${args.shopId}`,
-        stripeSubscriptionId: `unlimited_sub_${args.shopId}`,
         status: 'unlimited',
         basePriceMinor: 0,
         includedUnitsPerMonth: 2147483647,
@@ -436,8 +187,6 @@ const applyAdminShopPlan = async (args: { shopId: string; plan: 'standard' | 'un
       },
       create: {
         shopId: args.shopId,
-        stripeCustomerId: `unlimited_cus_${args.shopId}`,
-        stripeSubscriptionId: `unlimited_sub_${args.shopId}`,
         status: 'unlimited',
         basePriceMinor: 0,
         includedUnitsPerMonth: 2147483647,
@@ -456,8 +205,6 @@ const applyAdminShopPlan = async (args: { shopId: string; plan: 'standard' | 'un
   await prisma.shopSubscription.upsert({
     where: { shopId: args.shopId },
     update: {
-      stripeCustomerId: `standard_cus_${args.shopId}`,
-      stripeSubscriptionId: `standard_sub_${args.shopId}`,
       status: trialPolicy.enabled ? 'trialing' : 'incomplete',
       basePriceMinor: 99900,
       includedUnitsPerMonth: 100,
@@ -467,8 +214,6 @@ const applyAdminShopPlan = async (args: { shopId: string; plan: 'standard' | 'un
     },
     create: {
       shopId: args.shopId,
-      stripeCustomerId: `standard_cus_${args.shopId}`,
-      stripeSubscriptionId: `standard_sub_${args.shopId}`,
       status: trialPolicy.enabled ? 'trialing' : 'incomplete',
       basePriceMinor: 99900,
       includedUnitsPerMonth: 100,
@@ -478,78 +223,6 @@ const applyAdminShopPlan = async (args: { shopId: string; plan: 'standard' | 'un
     },
   });
 };
-
-const createStripeInvoiceForLedger = async (args: {
-  shopId: string;
-  monthKey: string;
-  stripeCustomerId: string;
-  baseAmountMinor: number;
-  overageAmountMinor: number;
-  vatAmountMinor: number;
-}): Promise<StripeInvoice> => {
-  const invoicePrefix = `epim-billing-${args.shopId}-${args.monthKey}`;
-
-  const baseItem = new URLSearchParams();
-  baseItem.set('customer', args.stripeCustomerId);
-  baseItem.set('currency', 'dkk');
-  baseItem.set('amount', String(args.baseAmountMinor));
-  baseItem.set('description', `ePIM base fee (${args.monthKey})`);
-  baseItem.set('metadata[shopId]', args.shopId);
-  baseItem.set('metadata[monthKey]', args.monthKey);
-  baseItem.set('metadata[type]', 'base');
-  await stripeRequest({
-    path: '/invoiceitems',
-    body: baseItem,
-    idempotencyKey: `${invoicePrefix}-base`,
-  });
-
-  if (args.overageAmountMinor > 0) {
-    const overageItem = new URLSearchParams();
-    overageItem.set('customer', args.stripeCustomerId);
-    overageItem.set('currency', 'dkk');
-    overageItem.set('amount', String(args.overageAmountMinor));
-    overageItem.set('description', `ePIM AI overage (${args.monthKey})`);
-    overageItem.set('metadata[shopId]', args.shopId);
-    overageItem.set('metadata[monthKey]', args.monthKey);
-    overageItem.set('metadata[type]', 'overage');
-    await stripeRequest({
-      path: '/invoiceitems',
-      body: overageItem,
-      idempotencyKey: `${invoicePrefix}-overage`,
-    });
-  }
-
-  if (args.vatAmountMinor > 0) {
-    const vatItem = new URLSearchParams();
-    vatItem.set('customer', args.stripeCustomerId);
-    vatItem.set('currency', 'dkk');
-    vatItem.set('amount', String(args.vatAmountMinor));
-    vatItem.set('description', `ePIM VAT 25% (${args.monthKey})`);
-    vatItem.set('metadata[shopId]', args.shopId);
-    vatItem.set('metadata[monthKey]', args.monthKey);
-    vatItem.set('metadata[type]', 'vat');
-    await stripeRequest({
-      path: '/invoiceitems',
-      body: vatItem,
-      idempotencyKey: `${invoicePrefix}-vat`,
-    });
-  }
-
-  const invoicePayload = new URLSearchParams();
-  invoicePayload.set('customer', args.stripeCustomerId);
-  invoicePayload.set('currency', 'dkk');
-  invoicePayload.set('collection_method', 'charge_automatically');
-  invoicePayload.set('auto_advance', 'true');
-  invoicePayload.set('metadata[shopId]', args.shopId);
-  invoicePayload.set('metadata[monthKey]', args.monthKey);
-
-  return stripeRequest<StripeInvoice>({
-    path: '/invoices',
-    body: invoicePayload,
-    idempotencyKey: `${invoicePrefix}-invoice`,
-  });
-};
-
 
 const extractJsonObjectText = (rawText: string): string | null => {
   const trimmed = rawText.trim();
@@ -868,8 +541,6 @@ const sourceApplyProductsSchema = z.object({
 });
 
 const setupSubscriptionSchema = z.object({
-  stripeCustomerId: z.string().trim().min(3).optional(),
-  stripeSubscriptionId: z.string().trim().min(3).optional(),
   status: z.enum(['trialing', 'active', 'unlimited', 'past_due', 'canceled', 'incomplete']).optional().default('active'),
   currentPeriodStart: z.string().datetime().optional(),
   currentPeriodEnd: z.string().datetime().optional(),
@@ -948,7 +619,6 @@ const adminPatchOrgSchema = z.object({
   cvrNumber: z.string().trim().length(8).regex(/^\d{8}$/).nullable().optional(),
   type: z.enum(['regular', 'agency']).optional(),
   address: z.string().trim().nullable().optional(),
-  stripeCustomerId: z.string().trim().nullable().optional(),
 });
 
 const orgMemberSchema = z.object({
@@ -1531,12 +1201,6 @@ app.post('/auth/register', { config: { rateLimit: { max: 5, timeWindow: '15 minu
   await prisma.organizationMembership.create({
     data: { organizationId: defaultOrganization.id, userId: user.id, role: 'owner' },
   });
-
-  try {
-    await ensureOrganizationStripeCustomer(defaultOrganization, user.email);
-  } catch (error) {
-    request.log.warn({ error, organizationId: defaultOrganization.id }, 'could not auto-provision Stripe customer on register');
-  }
 
   try {
     await sendMagicLink({ userId: user.id, email: user.email, redirectTo: '/onboarding', baseUrl });
@@ -2583,30 +2247,12 @@ app.post('/shops/:id/subscription', async (request: any, reply: any) => {
     return reply.code(400).send({ error: 'Shop has no organization. Run backfill first.' });
   }
 
-  const stripeCustomerId =
-    parsed.data.stripeCustomerId ??
-    (await ensureOrganizationStripeCustomer(
-      {
-        id: shop.organization.id,
-        name: shop.organization.name,
-        stripeCustomerId: shop.organization.stripeCustomerId,
-      },
-      user.email,
-    ));
-
-  const ensuredStripeSubscriptionId = parsed.data.stripeSubscriptionId ?? (await createStripeSubscription({
-    shopId: request.params.id,
-    stripeCustomerId,
-  })).id;
-
   const isUnlimitedPlan = parsed.data.status === 'unlimited';
   const unlimitedPeriodEnd = new Date(Date.UTC(2099, 11, 31, 23, 59, 59, 999));
 
   const subscription = await prisma.shopSubscription.upsert({
     where: { shopId: request.params.id },
     update: {
-      stripeCustomerId,
-      stripeSubscriptionId: ensuredStripeSubscriptionId,
       status: parsed.data.status,
       currentPeriodStart,
       currentPeriodEnd: isUnlimitedPlan ? unlimitedPeriodEnd : currentPeriodEnd,
@@ -2616,8 +2262,6 @@ app.post('/shops/:id/subscription', async (request: any, reply: any) => {
     },
     create: {
       shopId: request.params.id,
-      stripeCustomerId,
-      stripeSubscriptionId: ensuredStripeSubscriptionId,
       status: parsed.data.status,
       currentPeriodStart,
       currentPeriodEnd: isUnlimitedPlan ? unlimitedPeriodEnd : currentPeriodEnd,
@@ -2809,7 +2453,6 @@ app.post('/billing/close-month', async (request: any, reply: any) => {
     overageUnits: number;
     subtotalMinor: number;
     totalAmountMinor: number;
-    stripeInvoiceId: string | null;
   }> = [];
 
   for (const subscription of subscriptions) {
@@ -2833,37 +2476,6 @@ app.post('/billing/close-month', async (request: any, reply: any) => {
       subscriptionCreatedAt: subscription.createdAt,
     });
 
-    const existingLedger = await prisma.billingLedgerMonth.findUnique({
-      where: {
-        shopId_monthKey: {
-          shopId: subscription.shopId,
-          monthKey: parsed.data.monthKey,
-        },
-      },
-      select: {
-        stripeInvoiceId: true,
-      },
-    });
-
-    let stripeInvoiceId = existingLedger?.stripeInvoiceId ?? null;
-
-    if (parsed.data.finalize && !stripeInvoiceId && env.STRIPE_SECRET_KEY) {
-      try {
-        const invoice = await createStripeInvoiceForLedger({
-          shopId: subscription.shopId,
-          monthKey: parsed.data.monthKey,
-          stripeCustomerId: subscription.stripeCustomerId,
-          baseAmountMinor: breakdown.baseAmountMinor,
-          overageAmountMinor: breakdown.overageAmountMinor,
-          vatAmountMinor: breakdown.vatAmountMinor,
-        });
-
-        stripeInvoiceId = invoice.id;
-      } catch (error) {
-        request.log.error({ error, shopId: subscription.shopId, monthKey: parsed.data.monthKey }, 'stripe invoice creation failed during close-month');
-      }
-    }
-
     const row = await prisma.billingLedgerMonth.upsert({
       where: {
         shopId_monthKey: {
@@ -2881,7 +2493,6 @@ app.post('/billing/close-month', async (request: any, reply: any) => {
         vatRateBps: breakdown.vatRateBps,
         vatAmountMinor: breakdown.vatAmountMinor,
         totalAmountMinor: breakdown.totalAmountMinor,
-        stripeInvoiceId,
         finalizedAt: parsed.data.finalize ? new Date() : null,
       },
       create: {
@@ -2896,7 +2507,6 @@ app.post('/billing/close-month', async (request: any, reply: any) => {
         vatRateBps: breakdown.vatRateBps,
         vatAmountMinor: breakdown.vatAmountMinor,
         totalAmountMinor: breakdown.totalAmountMinor,
-        stripeInvoiceId,
         finalizedAt: parsed.data.finalize ? new Date() : null,
       },
     });
@@ -2907,7 +2517,6 @@ app.post('/billing/close-month', async (request: any, reply: any) => {
       overageUnits: row.overageUnits,
       subtotalMinor: row.subtotalMinor,
       totalAmountMinor: row.totalAmountMinor,
-      stripeInvoiceId: row.stripeInvoiceId,
     });
 
     // Auto-create referral commissions when finalized
@@ -3021,36 +2630,6 @@ app.get('/billing/ledger', async (request: any, reply: any) => {
     totals,
     rows,
   };
-});
-
-app.get('/billing/webhook-events', async (request: any, reply: any) => {
-  if (!(await withAuth(request, reply))) {
-    return;
-  }
-
-  const user = await getCurrentUser(request);
-  if (!user) {
-    return reply.code(401).send({ error: 'Session invalid. Please log in again.' });
-  }
-
-  if (!hasPlatformGlobalAccess(user.platformRole)) {
-    return reply.code(403).send({ error: 'Platform admin/support role required' });
-  }
-
-  const limit = Math.min(500, Math.max(1, Number(request.query.limit ?? 100)));
-  const status = (request.query.status as string | undefined) ?? undefined;
-  const provider = (request.query.provider as string | undefined) ?? 'stripe';
-
-  const events = await prisma.stripeWebhookEvent.findMany({
-    where: {
-      provider,
-      ...(status ? { status } : {}),
-    },
-    orderBy: { receivedAt: 'desc' },
-    take: limit,
-  });
-
-  return { count: events.length, events };
 });
 
 app.get('/billing/audit-log', async (request: any, reply: any) => {
@@ -3183,136 +2762,10 @@ app.post('/billing/notices/resend', async (request: any, reply: any) => {
   return { ok: true, recipients: recipients.length };
 });
 
-app.post('/billing/portal', async (request: any, reply: any) => {
-  if (!(await withAuth(request, reply))) return;
-  const user = await getCurrentUser(request);
-  if (!user) return reply.code(401).send({ error: 'Session invalid.' });
-
-  const membership = await prisma.organizationMembership.findFirst({
-    where: { userId: user.id },
-    include: { organization: true },
-    orderBy: { createdAt: 'asc' },
-  });
-
-  if (!membership) return reply.code(404).send({ error: 'Ingen organisation fundet' });
-
-  const org = membership.organization;
-
-  if (!env.STRIPE_SECRET_KEY) {
-    return reply.code(503).send({ error: 'Stripe er ikke konfigureret' });
-  }
-
-  const stripeCustomerId = await ensureOrganizationStripeCustomer(
-    { id: org.id, name: org.name, stripeCustomerId: org.stripeCustomerId },
-    user.email,
-  );
-
-  const returnUrl = `${env.APP_BASE_URL ?? (request.headers.origin as string | undefined) ?? ''}/settings/billing`;
-
-  const params = new URLSearchParams();
-  params.set('customer', stripeCustomerId);
-  params.set('return_url', returnUrl);
-
-  try {
-    const session = await stripeRequest<{ url: string }>({
-      path: '/billing_portal/sessions',
-      body: params,
-    });
-    return reply.send({ url: session.url });
-  } catch (err) {
-    request.log.error(err, 'Stripe billing portal session failed');
-    return reply.code(503).send({ error: 'Stripe er ikke konfigureret' });
-  }
-});
-
-// POST /billing/checkout — create Stripe Checkout Session (embedded, new subscription)
-app.post('/billing/checkout', async (request: any, reply: any) => {
-  if (!(await withAuth(request, reply))) return;
-  const user = await getCurrentUser(request);
-  if (!user) return reply.code(401).send({ error: 'Session invalid.' });
-
-  if (!env.STRIPE_SECRET_KEY || !env.STRIPE_BASE_PRICE_ID) {
-    return reply.code(503).send({ error: 'Stripe er ikke konfigureret' });
-  }
-
-  const membership = await prisma.organizationMembership.findFirst({
-    where: { userId: user.id },
-    include: { organization: { select: { id: true, name: true, stripeCustomerId: true } } },
-    orderBy: { createdAt: 'asc' },
-  });
-  if (!membership?.organization) return reply.code(404).send({ error: 'Ingen organisation fundet' });
-
-  const org = membership.organization;
-  const stripeCustomerId = await ensureOrganizationStripeCustomer(
-    { id: org.id, name: org.name, stripeCustomerId: org.stripeCustomerId },
-    user.email,
-  );
-
-  const body = (request.body ?? {}) as { returnUrl?: string };
-  const origin = (request.headers.origin as string | undefined) ?? env.APP_BASE_URL ?? '';
-  const returnUrl = body.returnUrl
-    ? `${body.returnUrl}${body.returnUrl.includes('?') ? '&' : '?'}session_id={CHECKOUT_SESSION_ID}`
-    : `${origin}/onboarding?checkout=complete&session_id={CHECKOUT_SESSION_ID}`;
-
-  const params = new URLSearchParams();
-  params.set('mode', 'subscription');
-  params.set('ui_mode', 'embedded');
-  params.set('customer', stripeCustomerId);
-  params.set('line_items[0][price]', env.STRIPE_BASE_PRICE_ID);
-  params.set('line_items[0][quantity]', '1');
-  params.set('return_url', returnUrl);
-
-  try {
-    const session = await stripeRequest<{ client_secret: string }>({
-      path: '/checkout/sessions',
-      body: params,
-    });
-    return reply.send({ clientSecret: session.client_secret });
-  } catch (err) {
-    request.log.error(err, 'Stripe checkout session creation failed');
-    return reply.code(503).send({ error: 'Kunne ikke oprette betaling. Prøv igen.' });
-  }
-});
-
-// GET /billing/status — org-level subscription check (no shop required)
+// GET /billing/status — always returns true for internal use
 app.get('/billing/status', async (request: any, reply: any) => {
   if (!(await withAuth(request, reply))) return;
-  const user = await getCurrentUser(request);
-  if (!user) return reply.code(401).send({ error: 'Session invalid.' });
-
-  const membership = await prisma.organizationMembership.findFirst({
-    where: { userId: user.id },
-    include: { organization: { select: { id: true, stripeCustomerId: true } } },
-    orderBy: { createdAt: 'asc' },
-  });
-  if (!membership?.organization) return reply.send({ hasAccess: false });
-
-  // Check existing shop subscriptions in our DB
-  const activeShopSub = await prisma.shopSubscription.findFirst({
-    where: {
-      shop: { organizationId: membership.organization.id },
-      status: { in: ['active', 'trialing', 'unlimited'] },
-      currentPeriodEnd: { gt: new Date() },
-    },
-  });
-  if (activeShopSub) return reply.send({ hasAccess: true });
-
-  // Check Stripe directly (catches subscriptions started via portal before shop is connected)
-  const { stripeCustomerId } = membership.organization;
-  if (stripeCustomerId && env.STRIPE_SECRET_KEY && !stripeCustomerId.startsWith('bootstrap_')) {
-    try {
-      const subs = await stripeRequest<{ data: Array<{ status: string }> }>({
-        method: 'GET',
-        path: `/subscriptions?customer=${stripeCustomerId}&limit=5`,
-      });
-      const hasStripeAccess = subs.data.some((s) => s.status === 'active' || s.status === 'trialing');
-      if (hasStripeAccess) return reply.send({ hasAccess: true });
-    } catch {
-      // Stripe unavailable — fall through to false
-    }
-  }
-
-  return reply.send({ hasAccess: false });
+  return reply.send({ hasAccess: true });
 });
 
 // POST /onboarding/request-setup — customer requests "Gør det for mig"
@@ -3390,88 +2843,6 @@ app.post('/support/message', async (request: any, reply: any) => {
   }
 
   return reply.send({ ok: true });
-});
-
-app.post('/billing/webhook-events/:id/retry', async (request: any, reply: any) => {
-  if (!(await withAuth(request, reply))) {
-    return;
-  }
-
-  const parsed = retryWebhookEventSchema.safeParse(request.body ?? {});
-  if (!parsed.success) {
-    return reply.code(400).send(parsed.error.flatten());
-  }
-
-  const user = await getCurrentUser(request);
-  if (!user) {
-    return reply.code(401).send({ error: 'Session invalid. Please log in again.' });
-  }
-
-  if (!hasPlatformGlobalAccess(user.platformRole)) {
-    return reply.code(403).send({ error: 'Platform admin/support role required' });
-  }
-
-  const eventLog = await prisma.stripeWebhookEvent.findUnique({ where: { id: request.params.id } });
-  if (!eventLog) {
-    return reply.code(404).send({ error: 'Webhook event not found' });
-  }
-
-  if (eventLog.provider !== 'stripe') {
-    return reply.code(400).send({ error: 'Only Stripe webhook events can be retried here' });
-  }
-
-  if (eventLog.status === 'processed' && !parsed.data.force) {
-    return reply.code(409).send({ error: 'Event already processed. Use force=true to retry anyway.' });
-  }
-
-  const event = eventLog.payloadJson as {
-    id?: string;
-    type?: string;
-    data?: { object?: any };
-  };
-
-  if (!event.type) {
-    return reply.code(400).send({ error: 'Stored event payload missing type' });
-  }
-
-  try {
-    await processStripeEvent({
-      type: event.type,
-      data: event.data,
-    });
-
-    await prisma.stripeWebhookEvent.update({
-      where: { id: eventLog.id },
-      data: {
-        status: 'processed',
-        processedAt: new Date(),
-        error: null,
-      },
-    });
-
-    await createBillingOpsAudit({
-      userId: user.id,
-      action: 'stripe_webhook_retry',
-      targetType: 'stripe_webhook_event',
-      targetId: eventLog.id,
-      metadataJson: {
-        eventId: eventLog.eventId,
-        force: parsed.data.force,
-      },
-    });
-
-    return { ok: true, retried: true };
-  } catch (error) {
-    await prisma.stripeWebhookEvent.update({
-      where: { id: eventLog.id },
-      data: {
-        status: 'failed',
-        error: error instanceof Error ? error.message : String(error),
-      },
-    });
-
-    throw error;
-  }
 });
 
 app.get('/integrations/openai', async (request: any, reply: any) => {
@@ -3596,50 +2967,34 @@ app.post('/shops/connect', async (request: any, reply: any) => {
   let warning: string | undefined;
   let subscriptionReady = false;
 
-  try {
-    const stripeCustomerId = await ensureOrganizationStripeCustomer(
-      {
-        id: organization.id,
-        name: organization.name,
-        stripeCustomerId: organization.stripeCustomerId,
+  const trialPolicy = await getTrialPolicy();
+  const existingSubscription = await prisma.shopSubscription.findUnique({ where: { shopId: shop.id } });
+  subscriptionReady = isSubscriptionAccessAllowed(existingSubscription as any);
+
+  if (!existingSubscription && trialPolicy.enabled) {
+    const now = new Date();
+    const periodStart = now;
+    const periodEnd = new Date(now.getTime() + trialPolicy.trialDays * 24 * 60 * 60 * 1000);
+
+    await prisma.shopSubscription.create({
+      data: {
+        shopId: shop.id,
+        status: 'trialing',
+        basePriceMinor: 99900,
+        includedUnitsPerMonth: 100,
+        overageUnitMinor: 50,
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
       },
-      currentUser.email,
-    );
+    });
 
-    const trialPolicy = await getTrialPolicy();
-    const existingSubscription = await prisma.shopSubscription.findUnique({ where: { shopId: shop.id } });
-    subscriptionReady = isSubscriptionAccessAllowed(existingSubscription as any);
+    warning = `Shop connected. Free trial activated for ${trialPolicy.trialDays} days.`;
+    subscriptionReady = true;
+  }
 
-    if (!existingSubscription && trialPolicy.enabled) {
-      const now = new Date();
-      const periodStart = now;
-      const periodEnd = new Date(now.getTime() + trialPolicy.trialDays * 24 * 60 * 60 * 1000);
-
-      await prisma.shopSubscription.create({
-        data: {
-          shopId: shop.id,
-          stripeCustomerId,
-          stripeSubscriptionId: `trial_sub_${shop.id}`,
-          status: 'trialing',
-          basePriceMinor: 99900,
-          includedUnitsPerMonth: 100,
-          overageUnitMinor: 50,
-          currentPeriodStart: periodStart,
-          currentPeriodEnd: periodEnd,
-        },
-      });
-
-      warning = `Shop connected. Free trial activated for ${trialPolicy.trialDays} days.`;
-      subscriptionReady = true;
-    }
-
-    if (!existingSubscription && !trialPolicy.enabled) {
-      warning = 'Shop connected. Create/activate a subscription before using this webshop.';
-      subscriptionReady = false;
-    }
-  } catch (error) {
-    request.log.warn({ error, shopUrl: parsed.data.storeUrl }, 'shop connected without successful Stripe subscription provisioning');
-    warning = 'Shop connected, but subscription setup was not completed. Open subscription settings and activate it.';
+  if (!existingSubscription && !trialPolicy.enabled) {
+    warning = 'Shop connected. Create/activate a subscription before using this webshop.';
+    subscriptionReady = false;
   }
 
   try {
@@ -9032,81 +8387,6 @@ app.post('/ai/jobs/:jobId/cancel', async (request: any, reply: any) => {
 
   return { ok: true };
 });
-
-app.post(
-  '/webhooks/stripe',
-  {
-    config: {
-      rawBody: true,
-    },
-  },
-  async (request: any, reply: any) => {
-    if (!env.STRIPE_WEBHOOK_SECRET) {
-      return reply.code(503).send({ error: 'Stripe webhook secret not configured' });
-    }
-
-    const raw = request.rawBody ?? '';
-    const signatureHeader = request.headers['stripe-signature'] as string | undefined;
-
-    if (!verifyStripeWebhook(raw, signatureHeader, env.STRIPE_WEBHOOK_SECRET)) {
-      return reply.code(401).send({ error: 'Invalid Stripe webhook signature' });
-    }
-
-    const event = JSON.parse(raw || '{}') as {
-      id?: string;
-      type?: string;
-      data?: { object?: any };
-    };
-
-    if (!event.id || !event.type) {
-      return reply.code(400).send({ error: 'Invalid Stripe event payload' });
-    }
-
-    try {
-      await prisma.stripeWebhookEvent.create({
-        data: {
-          provider: 'stripe',
-          eventId: event.id,
-          eventType: event.type,
-          status: 'received',
-          payloadJson: event as any,
-        },
-      });
-    } catch (error) {
-      if (isUniqueConstraintError(error)) {
-        return reply.code(202).send({ deduped: true, eventId: event.id });
-      }
-      throw error;
-    }
-
-    try {
-      await processStripeEvent({
-        type: event.type,
-        data: event.data,
-      });
-
-      await prisma.stripeWebhookEvent.update({
-        where: { eventId: event.id },
-        data: {
-          status: 'processed',
-          processedAt: new Date(),
-          error: null,
-        },
-      });
-
-      return { received: true };
-    } catch (error) {
-      await prisma.stripeWebhookEvent.update({
-        where: { eventId: event.id },
-        data: {
-          status: 'failed',
-          error: error instanceof Error ? error.message : String(error),
-        },
-      });
-      throw error;
-    }
-  },
-);
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ADMIN — Users

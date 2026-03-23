@@ -1,15 +1,12 @@
 'use client';
 
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch, getActiveShopId, setActiveShopId, setToken as saveToken } from '../../../lib/api';
 import { registerBackgroundActivityJobs } from '../../../lib/background-activity';
 import { toast } from '../../../components/toaster';
-import { loadStripe } from '@stripe/stripe-js';
-
-const STRIPE_PK = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -301,7 +298,7 @@ function MappingIssuesPanel({
 
 // ─── Add Webshop Modal ────────────────────────────────────────────────────────
 
-type AddShopStep = 'url' | 'subscription' | 'connect';
+type AddShopStep = 'url' | 'connect';
 
 function AddWebshopModal({
   onClose,
@@ -326,57 +323,6 @@ function AddWebshopModal({
   const [fields, setFields] = useState<FieldDefinition[]>([]);
   const [mappingState, setMappingState] = useState<Record<string, MappingResolutionState>>({});
   const [resolvingIssueIds, setResolvingIssueIds] = useState<Record<string, boolean>>({});
-
-  // Stripe embedded checkout
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const [checkoutError, setCheckoutError] = useState('');
-  const checkoutRef = useRef<HTMLDivElement>(null);
-  const embeddedCheckoutRef = useRef<{ destroy(): void } | null>(null);
-
-  useEffect(() => {
-    if (step === 'subscription' && !checkoutOpen && !checkoutLoading) {
-      void openCheckout();
-    }
-  }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    return () => { embeddedCheckoutRef.current?.destroy(); };
-  }, []);
-
-  const openCheckout = async (): Promise<void> => {
-    if (!STRIPE_PK) {
-      setCheckoutError('Stripe er ikke konfigureret. Kontakt support.');
-      return;
-    }
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem('epim_pending_shop_url', storeUrl);
-    }
-    try {
-      setCheckoutLoading(true);
-      setCheckoutError('');
-      const returnUrl = `${window.location.origin}/settings/shops?checkout=complete`;
-      const { clientSecret } = await apiFetch<{ clientSecret: string }>('/billing/checkout', {
-        method: 'POST',
-        body: JSON.stringify({ returnUrl }),
-      });
-      const stripe = await loadStripe(STRIPE_PK);
-      if (!stripe) throw new Error('Stripe kunne ikke indlæses.');
-      embeddedCheckoutRef.current?.destroy();
-      const checkout = await stripe.initEmbeddedCheckout({ clientSecret });
-      setCheckoutOpen(true);
-      setTimeout(() => {
-        if (checkoutRef.current) {
-          checkout.mount(checkoutRef.current);
-          embeddedCheckoutRef.current = checkout;
-        }
-      }, 50);
-    } catch (err) {
-      setCheckoutError(getErrorMessage(err, 'Kunne ikke åbne checkout. Prøv igen.'));
-    } finally {
-      setCheckoutLoading(false);
-    }
-  };
 
   const ensureIssueState = (issue: MappingIssue): MappingResolutionState => ({
     mode: 'existing',
@@ -489,7 +435,6 @@ function AddWebshopModal({
 
   const steps: { id: AddShopStep; label: string }[] = [
     { id: 'url', label: 'Butik' },
-    { id: 'subscription', label: 'Abonnement' },
     { id: 'connect', label: 'Forbind' },
   ];
   const stepIndex = steps.findIndex((s) => s.id === step);
@@ -553,7 +498,7 @@ function AddWebshopModal({
                   type="text"
                   value={storeUrl}
                   onChange={(e: ChangeEvent<HTMLInputElement>) => setStoreUrl(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && storeUrl.trim()) setStep('subscription'); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && storeUrl.trim()) setStep('connect'); }}
                   placeholder="minbutik.myshopify.com"
                   autoFocus
                   className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 placeholder-slate-400 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
@@ -562,49 +507,11 @@ function AddWebshopModal({
               <div className="flex justify-end pt-1">
                 <button
                   type="button"
-                  onClick={() => setStep('subscription')}
+                  onClick={() => setStep('connect')}
                   disabled={!storeUrl.trim()}
                   className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60"
                 >
                   Næste →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {step === 'subscription' && (
-            <div className="space-y-4">
-              {checkoutLoading ? (
-                <div className="flex items-center gap-2 py-6 text-sm text-slate-400">
-                  <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="31.4 31.4" strokeLinecap="round" /></svg>
-                  Indlæser betalingsformular…
-                </div>
-              ) : checkoutError ? (
-                <div className="space-y-3">
-                  <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-600">{checkoutError}</p>
-                  <button
-                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition"
-                    onClick={() => void openCheckout()}
-                  >
-                    Prøv igen
-                  </button>
-                </div>
-              ) : null}
-              <div ref={checkoutRef} className={checkoutOpen ? 'rounded-xl overflow-hidden' : 'hidden'} />
-              <div className="flex items-center justify-between pt-1">
-                <button
-                  type="button"
-                  onClick={() => setStep('url')}
-                  className="text-sm text-slate-500 transition hover:text-slate-700"
-                >
-                  ← Tilbage
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStep('connect')}
-                  className="text-sm text-indigo-600 transition hover:text-indigo-700 hover:underline"
-                >
-                  Har allerede et abonnement →
                 </button>
               </div>
             </div>
@@ -667,7 +574,7 @@ function AddWebshopModal({
                   <div className="flex flex-wrap items-center gap-3 pt-1">
                     <button
                       type="button"
-                      onClick={() => setStep('subscription')}
+                      onClick={() => setStep('url')}
                       className="text-sm text-slate-500 transition hover:text-slate-700"
                     >
                       ← Tilbage

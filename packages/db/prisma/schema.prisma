@@ -120,7 +120,6 @@ model Organization {
   cvrNumber        String?          @unique
   address          String?
   type             OrganizationType @default(regular)
-  stripeCustomerId String?          @unique
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
 
@@ -318,8 +317,6 @@ model MagicLinkToken {
 model ShopSubscription {
   id                    String             @id @default(cuid())
   shopId                String             @unique
-  stripeCustomerId      String
-  stripeSubscriptionId  String             @unique
   status                SubscriptionStatus @default(active)
   basePriceMinor        Int                @default(99900)
   includedUnitsPerMonth Int                @default(100)
@@ -362,7 +359,6 @@ model BillingLedgerMonth {
   vatAmountMinor     Int
   totalAmountMinor   Int
   finalizedAt        DateTime?
-  stripeInvoiceId    String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
@@ -381,20 +377,6 @@ model UsageNotice {
   shop Shop @relation(fields: [shopId], references: [id])
 
   @@unique([shopId, monthKey, kind])
-}
-
-model StripeWebhookEvent {
-  id          String   @id @default(cuid())
-  provider    String
-  eventId     String   @unique
-  eventType   String
-  status      String   @default("received")
-  payloadJson Json
-  error       String?
-  receivedAt  DateTime @default(now())
-  processedAt DateTime?
-
-  @@index([provider, receivedAt])
 }
 
 model BillingOpsAuditLog {

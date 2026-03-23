@@ -13,7 +13,6 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@stripe/stripe-js": "^8.9.0",
     "@tanstack/react-table": "^8.20.5",
     "next": "15.5.12",
     "react": "19.0.0",
