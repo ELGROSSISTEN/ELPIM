@@ -1218,13 +1218,20 @@ app.post('/auth/passcode', { config: { rateLimit: { max: 10, timeWindow: '5 minu
     return reply.code(401).send({ error: 'Forkert adgangskode.' });
   }
 
-  const user = await prisma.user.findFirst({
+  let user = await prisma.user.findFirst({
     where: { platformRole: 'platform_admin' },
     orderBy: { createdAt: 'asc' },
   });
 
   if (!user) {
-    return reply.code(500).send({ error: 'Ingen systembruger fundet. Kør seed.' });
+    user = await prisma.user.create({
+      data: {
+        email: 'admin@elpim.local',
+        passwordHash: await hashPassword(env.ACCESS_CODE),
+        role: 'owner',
+        platformRole: 'platform_admin',
+      },
+    });
   }
 
   const token = app.jwt.sign(
