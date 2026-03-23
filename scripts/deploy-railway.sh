@@ -31,8 +31,7 @@ EOF
   cp "$tmptoml" railway.toml
   rm -f "$tmptoml"
 
-  railway link -p "$PROJECT" -e "$ENV" -s "$service" >/dev/null
-  railway up --ci --service "$service" --environment "$ENV"
+  railway up --ci --service "$service"
   echo "✅ $service deployed"
 }
 
