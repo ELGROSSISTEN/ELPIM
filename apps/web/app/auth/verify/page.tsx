@@ -10,7 +10,7 @@ function VerifyContent() {
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    document.title = 'Verificer e-mail | ePIM';
+    document.title = 'Verificer e-mail | EL-PIM';
     const token = searchParams.get('token');
     if (!token) {
       setErrorMsg('Ugyldigt link — token mangler.');

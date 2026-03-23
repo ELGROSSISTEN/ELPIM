@@ -83,7 +83,7 @@ Regler:
   },
 ];
 
-const RECENT_COMPETITOR_LINKS_KEY = 'epim_recent_competitor_links';
+const RECENT_COMPETITOR_LINKS_KEY = 'elpim_recent_competitor_links';
 
 const normalizeCompetitorInput = (value: string): string | null => {
   const trimmed = value.trim();
@@ -373,7 +373,7 @@ export function ProductsGrid({
   const [expandedProductIds, setExpandedProductIds] = useState<Set<string>>(new Set());
   const [autoExpand, setAutoExpand] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
-    try { return window.localStorage.getItem('epim_grid_autoexpand') === '1'; } catch { return false; }
+    try { return window.localStorage.getItem('elpim_grid_autoexpand') === '1'; } catch { return false; }
   });
 
   // Sync status sets derived from server-computed syncStatus
@@ -397,7 +397,7 @@ export function ProductsGrid({
 
   const columnPrefsKey = useMemo(() => {
     const signature = fields.map((field) => field.id).join('-');
-    return `epim_products_grid_prefs_${signature}`;
+    return `elpim_products_grid_prefs_${signature}`;
   }, [fields]);
 
   useEffect(() => {
@@ -599,7 +599,7 @@ export function ProductsGrid({
   const toggleAutoExpand = (): void => {
     setAutoExpand((prev) => {
       const next = !prev;
-      try { window.localStorage.setItem('epim_grid_autoexpand', next ? '1' : '0'); } catch { /* ignore */ }
+      try { window.localStorage.setItem('elpim_grid_autoexpand', next ? '1' : '0'); } catch { /* ignore */ }
       if (!next) setExpandedProductIds(new Set());
       return next;
     });
@@ -866,7 +866,7 @@ export function ProductsGrid({
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = objectUrl; a.download = 'epim-export.csv';
+      a.href = objectUrl; a.download = 'el-pim-export.csv';
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(objectUrl);
       setExportModalOpen(false);
@@ -1194,7 +1194,7 @@ export function ProductsGrid({
             <span>Status</span>
             <svg viewBox="0 0 24 24" className="h-3 w-3 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
             <div className="pointer-events-none absolute left-0 top-full z-[60] mt-1 w-52 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] text-slate-600 shadow-xl opacity-0 transition group-hover:opacity-100 font-normal normal-case tracking-normal whitespace-normal">
-              Synkroniseringsstatus mellem ePIM og Shopify for dette produkt.
+              Synkroniseringsstatus mellem EL-PIM og Shopify for dette produkt.
             </div>
           </div>
         ),
@@ -1570,7 +1570,7 @@ export function ProductsGrid({
               <span>Seneste Shopify-sync</span>
               <svg viewBox="0 0 24 24" className="h-3 w-3 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
               <div className="pointer-events-none absolute left-0 top-full z-[60] mt-1 w-60 rounded-lg border border-slate-200 bg-white p-2.5 text-[11px] text-slate-600 shadow-xl opacity-0 transition group-hover:opacity-100 font-normal normal-case tracking-normal whitespace-normal">
-                Tidspunkt for seneste gang ePIM har skrevet data til Shopify for dette produkt. Sorter stigende for at finde produkter, der aldrig eller sjældent er synkroniseret.
+                Tidspunkt for seneste gang EL-PIM har skrevet data til Shopify for dette produkt. Sorter stigende for at finde produkter, der aldrig eller sjældent er synkroniseret.
               </div>
             </div>
           ),
@@ -1628,7 +1628,7 @@ export function ProductsGrid({
                 <div className="flex flex-col gap-0.5">
                   <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-200 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
                     <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                    ePIM
+                    EL-PIM
                   </span>
                   {dateStr && <span className="text-[10px] text-slate-400 pl-1">{dateStr}</span>}
                 </div>
@@ -3213,7 +3213,7 @@ export function ProductsGrid({
                 Slet {effectiveCount.toLocaleString('da-DK')} {effectiveCount === 1 ? 'produkt' : 'produkter'}?
               </h3>
               <p className="text-sm text-slate-500 mt-1.5 leading-relaxed">
-                Produkterne slettes permanent fra ePIM. Denne handling kan ikke fortrydes.
+                Produkterne slettes permanent fra EL-PIM. Denne handling kan ikke fortrydes.
               </p>
               <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 max-h-40 overflow-y-auto space-y-1">
                 {selectedProductIds.slice(0, 6).map((id) => {

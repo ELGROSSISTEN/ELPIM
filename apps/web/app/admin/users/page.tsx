@@ -83,7 +83,7 @@ export default function AdminUsersPage() {
     }
   };
 
-  useEffect(() => { document.title = 'Brugere — Admin | ePIM'; }, []);
+  useEffect(() => { document.title = 'Brugere — Admin | EL-PIM'; }, []);
   useEffect(() => { void loadUsers(); }, [q, platformFilter, page]); // eslint-disable-line
 
   const createUser = async (): Promise<void> => {

@@ -6,7 +6,7 @@ const createdEmails: string[] = [];
 
 const createAuthenticatedSession = async (page: any): Promise<{ email: string; token: string }> => {
   const suffix = `${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
-  const email = `e2e.owner.${suffix}@epim.local`;
+  const email = `e2e.owner.${suffix}@elpim.local`;
   const password = 'e2e-password-123';
 
   const response = await page.request.post(`${API}/auth/register`, {
@@ -30,13 +30,13 @@ const createAuthenticatedSession = async (page: any): Promise<{ email: string; t
   const payload = (await loginResponse.json()) as { token: string };
 
   await page.addInitScript((token: string) => {
-    localStorage.setItem('epim_token', token);
+    localStorage.setItem('elpim_token', token);
   }, payload.token);
 
   // Set the auth-presence cookie at browser level so Next.js middleware allows the session
   await page.context().addCookies([
     {
-      name: 'epim_authed',
+      name: 'elpim_authed',
       value: '1',
       domain: '127.0.0.1',
       path: '/',
@@ -75,7 +75,7 @@ test('smoke flow: billing ops page loads and can run close-month preview', async
 test.afterAll(async ({ request }) => {
   // Log in as the platform admin seed user to call admin endpoints
   const login = await request.post(`${API}/auth/login`, {
-    data: { email: 'owner@epim.local', password: 'changeme123' },
+    data: { email: 'owner@elpim.local', password: 'changeme123' },
   });
 
   if (!login.ok()) {

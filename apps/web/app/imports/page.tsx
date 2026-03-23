@@ -54,7 +54,7 @@ export default function ImportsPage() {
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { document.title = 'Import | ePIM'; }, []);
+  useEffect(() => { document.title = 'Import | EL-PIM'; }, []);
 
   // Poll while job is running
   useEffect(() => {

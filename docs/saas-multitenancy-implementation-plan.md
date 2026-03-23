@@ -1,4 +1,4 @@
-# ePIM SaaS Multi-Tenancy Implementation Plan
+# EL-PIM SaaS Multi-Tenancy Implementation Plan
 
 Status: Approved product decisions integrated (2026-03-08)
 Owner: Platform/backend

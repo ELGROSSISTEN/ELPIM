@@ -28,7 +28,7 @@ export default function RegisterPage() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
 
-  useEffect(() => { document.title = 'Opret konto | ePIM'; }, []);
+  useEffect(() => { document.title = 'Opret konto | EL-PIM'; }, []);
   const [email, setEmail] = useState('');
   const [phonePrefix, setPhonePrefix] = useState('+45');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -98,7 +98,7 @@ export default function RegisterPage() {
   return (
     <AuthLayout
       heading="Opret konto"
-      subheading="Få adgang til dit ePIM-arbejdsområde på under 2 minutter."
+      subheading="Få adgang til dit EL-PIM-arbejdsområde på under 2 minutter."
     >
       <form
         className="space-y-4"
@@ -202,7 +202,7 @@ export default function RegisterPage() {
 
         <div className="space-y-1.5">
           <label className="block text-sm font-medium text-slate-700" htmlFor="referralSource">
-            Hvor kender du ePIM fra?
+            Hvor kender du EL-PIM fra?
           </label>
           <select
             id="referralSource"
@@ -245,7 +245,7 @@ export default function RegisterPage() {
         <p className="text-center text-xs text-slate-400">
           Ved oprettelse accepterer du{' '}
           <a href="/privacy" className="underline hover:text-slate-600">
-            ePIM's vilkår og privatlivspolitik
+            EL-PIM's vilkår og privatlivspolitik
           </a>
           .
         </p>

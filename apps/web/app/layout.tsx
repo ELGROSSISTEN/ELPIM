@@ -4,8 +4,8 @@ import { AppShell } from '../components/app-shell';
 
 export const metadata: Metadata = {
   title: {
-    default: 'ePIM',
-    template: '%s | ePIM',
+    default: 'EL-PIM',
+    template: '%s | EL-PIM',
   },
   description: 'Shopify-first Cloud PIM',
 };

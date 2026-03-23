@@ -216,7 +216,7 @@ const getAutoPreset = (
   return null;
 };
 
-const RECENT_COMPETITOR_LINKS_KEY = 'epim_recent_competitor_links';
+const RECENT_COMPETITOR_LINKS_KEY = 'elpim_recent_competitor_links';
 
 const normalizeCompetitorInput = (value: string): string | null => {
   const trimmed = value.trim();
@@ -363,7 +363,7 @@ export default function ProductDetailsPage() {
   const [userRole, setUserRole] = useState<string>('member');
   const [showStamdata, setShowStamdata] = useState(() => {
     if (typeof window === 'undefined') return true;
-    return window.localStorage.getItem('epim_show_stamdata') !== 'false';
+    return window.localStorage.getItem('elpim_show_stamdata') !== 'false';
   });
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
@@ -483,7 +483,7 @@ export default function ProductDetailsPage() {
     ])
       .then(([productResponse, fieldResponse, warningResponse, logResponse, sourceResponse, promptsResponse, settingsResponse, meResponse, mappingResponse, draftResponse, aiSettingsResponse]) => {
         setProduct(productResponse.product);
-        document.title = `${productResponse.product.title} | ePIM`;
+        document.title = `${productResponse.product.title} | EL-PIM`;
         setStatusEdit(productResponse.product.status ?? 'DRAFT');
         setHandleEdit(productResponse.product.handle ?? '');
         setVendorEdit(productResponse.product.vendor ?? '');
@@ -985,7 +985,7 @@ export default function ProductDetailsPage() {
         toast.success('Produktdata hentet og opdateret fra Shopify.');
       }
     } catch (err) {
-      // 409 conflict: Shopify has data but ePIM has local changes
+      // 409 conflict: Shopify has data but EL-PIM has local changes
       if (err instanceof Error) {
         try {
           const parsed = JSON.parse(err.message) as { error?: string; message?: string; shopifyData?: Partial<Product> };
@@ -1388,7 +1388,7 @@ export default function ProductDetailsPage() {
     const next = !showStamdata;
     setShowStamdata(next);
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem('epim_show_stamdata', String(next));
+      window.localStorage.setItem('elpim_show_stamdata', String(next));
     }
   };
 
@@ -2440,7 +2440,7 @@ export default function ProductDetailsPage() {
             <div className="flex-1 min-w-0">
               <div className="font-semibold text-red-900 text-[15px]">Synkroniseringskonflikt</div>
               <div className="mt-1 text-sm text-red-700 leading-relaxed">
-                Både ePIM og Shopify har fået ændringer siden sidste synkronisering. Du skal vælge hvilken version der skal gælde — ellers risikerer du at overskrive ændringer.
+                Både EL-PIM og Shopify har fået ændringer siden sidste synkronisering. Du skal vælge hvilken version der skal gælde — ellers risikerer du at overskrive ændringer.
               </div>
             </div>
           </div>
@@ -2455,7 +2455,7 @@ export default function ProductDetailsPage() {
               )}
             </div>
             <div className="px-4 py-3 bg-indigo-50/60">
-              <div className="font-medium text-indigo-400 uppercase tracking-wide text-[10px] mb-1">ePIM redigeret</div>
+              <div className="font-medium text-indigo-400 uppercase tracking-wide text-[10px] mb-1">EL-PIM redigeret</div>
               <div className="font-semibold text-indigo-700">{product.updatedAt ? formatRelativeConflict(product.updatedAt) : '—'}</div>
               {product.updatedAt && (
                 <div className="text-indigo-400 mt-0.5">{new Date(product.updatedAt).toLocaleString('da-DK', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
@@ -2490,7 +2490,7 @@ export default function ProductDetailsPage() {
                   <div className="grid grid-cols-[120px_1fr_1fr] bg-slate-50 border-b border-slate-200 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
                     <div className="px-3 py-2">Felt</div>
                     <div className="px-3 py-2 border-l border-slate-200 flex items-center gap-1.5">
-                      <span className="h-2 w-2 rounded-full bg-indigo-400 shrink-0" />ePIM
+                      <span className="h-2 w-2 rounded-full bg-indigo-400 shrink-0" />EL-PIM
                     </div>
                     <div className="px-3 py-2 border-l border-slate-200 flex items-center gap-1.5">
                       <span className="h-2 w-2 rounded-full bg-orange-400 shrink-0" />Shopify
@@ -2542,7 +2542,7 @@ export default function ProductDetailsPage() {
                 className="rounded-lg border border-orange-200 bg-white px-4 py-2 text-sm font-medium text-orange-800 hover:bg-orange-50 disabled:opacity-50 transition"
                 disabled={isSaving}
                 onClick={() => void acceptShopifyData()}
-                title="Henter de nyeste data fra Shopify og overskriver ePIM's version"
+                title="Henter de nyeste data fra Shopify og overskriver EL-PIM's version"
               >
                 <span className="flex items-center gap-1.5">
                   <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -2553,10 +2553,10 @@ export default function ProductDetailsPage() {
                 className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition"
                 disabled={isSaving}
                 onClick={() => void saveAndSyncToShopify()}
-                title="Gemmer ePIM's version og sender den til Shopify — overskriver Shopifys ændringer"
+                title="Gemmer EL-PIM's version og sender den til Shopify — overskriver Shopifys ændringer"
               >
                 <span className="flex items-center gap-1.5">
-                  {isSaving ? 'Synkroniserer…' : 'Brug ePIM-version → sync til Shopify'}
+                  {isSaving ? 'Synkroniserer…' : 'Brug EL-PIM-version → sync til Shopify'}
                   {!isSaving && <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>}
                 </span>
               </button>
@@ -2594,7 +2594,7 @@ export default function ProductDetailsPage() {
                   <a href="/settings/mappings" className="underline hover:text-amber-900">
                     Gå til Mappings → skift konfliktpolitik
                   </a>{' '}
-                  til <em>Nyeste vinder</em> eller <em>ePIM vinder</em> for at tillade automatisk synkronisering.
+                  til <em>Nyeste vinder</em> eller <em>EL-PIM vinder</em> for at tillade automatisk synkronisering.
                 </>
               );
             } else if (warning.type === 'conflict') {
@@ -2671,7 +2671,7 @@ export default function ProductDetailsPage() {
                       <div className={`rounded-lg border p-3 ${titleChanged ? 'border-amber-200 bg-amber-50/50' : 'border-emerald-200 bg-emerald-50/50'}`}>
                         <div className="mb-1 flex items-center gap-1.5">
                           <span className={`h-2 w-2 rounded-full ${titleChanged ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                          <span className={`text-[10px] font-medium uppercase tracking-wide ${titleChanged ? 'text-amber-700' : 'text-emerald-700'}`}>Kladde (ePIM)</span>
+                          <span className={`text-[10px] font-medium uppercase tracking-wide ${titleChanged ? 'text-amber-700' : 'text-emerald-700'}`}>Kladde (EL-PIM)</span>
                         </div>
                         <div className="text-sm text-gray-800">{draftTitle || <span className="text-gray-400 italic">Tom</span>}</div>
                       </div>
@@ -2696,7 +2696,7 @@ export default function ProductDetailsPage() {
                       <div className={`rounded-lg border p-3 ${descChanged ? 'border-amber-200 bg-amber-50/50' : 'border-emerald-200 bg-emerald-50/50'}`}>
                         <div className="mb-1 flex items-center gap-1.5">
                           <span className={`h-2 w-2 rounded-full ${descChanged ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                          <span className={`text-[10px] font-medium uppercase tracking-wide ${descChanged ? 'text-amber-700' : 'text-emerald-700'}`}>Kladde (ePIM)</span>
+                          <span className={`text-[10px] font-medium uppercase tracking-wide ${descChanged ? 'text-amber-700' : 'text-emerald-700'}`}>Kladde (EL-PIM)</span>
                         </div>
                         {draftDesc ? (
                           <div className="ep-richtext max-h-40 overflow-auto text-sm text-gray-800" dangerouslySetInnerHTML={{ __html: draftDesc }} />

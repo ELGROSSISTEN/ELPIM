@@ -66,7 +66,7 @@ export default function AdminOrganizationsPage() {
     }
   };
 
-  useEffect(() => { document.title = 'Organisationer — Admin | ePIM'; }, []);
+  useEffect(() => { document.title = 'Organisationer — Admin | EL-PIM'; }, []);
   useEffect(() => { void loadOrgs(); }, [q, typeFilter, page]); // eslint-disable-line
 
   const lookupCvr = async (): Promise<void> => {
@@ -74,7 +74,7 @@ export default function AdminOrganizationsPage() {
     setCvrLookingUp(true);
     setStatus('');
     try {
-      const res = await fetch(`https://cvrapi.dk/api?country=DK&vat=${newCvr}`, { headers: { 'User-Agent': 'ePIM/1.0' } });
+      const res = await fetch(`https://cvrapi.dk/api?country=DK&vat=${newCvr}`, { headers: { 'User-Agent': 'EL-PIM/1.0' } });
       if (res.ok) {
         const data = await res.json() as Record<string, unknown>;
         if (typeof data.name === 'string') setNewName(data.name);
@@ -135,7 +135,7 @@ export default function AdminOrganizationsPage() {
     if (editCvr.length !== 8) { setStatus('CVR-nummer skal være 8 cifre'); return; }
     setEditCvrLooking(true);
     try {
-      const res = await fetch(`https://cvrapi.dk/api?country=DK&vat=${encodeURIComponent(editCvr)}`, { headers: { 'User-Agent': 'ePIM/1.0' } });
+      const res = await fetch(`https://cvrapi.dk/api?country=DK&vat=${encodeURIComponent(editCvr)}`, { headers: { 'User-Agent': 'EL-PIM/1.0' } });
       if (res.ok) {
         const data = await res.json() as Record<string, unknown>;
         if (typeof data.name === 'string') setEditName(data.name);

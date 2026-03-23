@@ -42,7 +42,7 @@ const features = [
         <path d="M4 6h16M4 12h16M4 18h10" /><circle cx="17" cy="18" r="3" />
       </svg>
     ),
-    title: 'Custom ePIM-felter',
+    title: 'Custom EL-PIM-felter',
     desc: 'Udvid produktdatamodellen med egne felter og mappings.',
   },
 ];
@@ -64,7 +64,7 @@ export function AuthLayout({
         <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
           <CubeIcon className="h-4 w-4 text-white" />
         </div>
-        <span className="text-base font-bold tracking-tight text-white">ePIM</span>
+        <span className="text-base font-bold tracking-tight text-white">EL-PIM</span>
         <span className="ml-auto text-xs text-indigo-200/60">Cloud PIM</span>
       </div>
 
@@ -80,7 +80,7 @@ export function AuthLayout({
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/25 shadow-lg">
               <CubeIcon className="h-5 w-5 text-white" />
             </div>
-            <span className="text-xl font-bold tracking-tight text-white">ePIM</span>
+            <span className="text-xl font-bold tracking-tight text-white">EL-PIM</span>
           </div>
           <p className="mt-4 max-w-xs text-sm leading-relaxed text-indigo-200/80">
             Cloud PIM til ambitiøse Shopify-merchants. Samlet datahub for produkter, varianter og indhold.
@@ -104,7 +104,7 @@ export function AuthLayout({
 
         {/* Footer */}
         <div className="relative z-10 text-xs text-indigo-200/40">
-          © {new Date().getFullYear()} ePIM · Shopify-first Cloud PIM
+          © {new Date().getFullYear()} EL-PIM · Shopify-first Cloud PIM
         </div>
       </div>
 
@@ -120,7 +120,7 @@ export function AuthLayout({
 
           <div className="mt-8 flex items-center gap-3">
             <div className="h-px flex-1 bg-slate-200" />
-            <span className="text-xs text-slate-400">ePIM · sikker forbindelse</span>
+            <span className="text-xs text-slate-400">EL-PIM · sikker forbindelse</span>
             <div className="h-px flex-1 bg-slate-200" />
           </div>
         </div>

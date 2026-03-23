@@ -6,8 +6,8 @@ export const metadata: Metadata = {
 };
 
 const LAST_UPDATED = '1. marts 2026';
-const COMPANY = 'ePIM ApS';
-const EMAIL = 'mail@epim.dk';
+const COMPANY = 'EL-PIM ApS';
+const EMAIL = 'mail@el-grossisten.dk';
 
 export default function PrivacyPage() {
   return (
@@ -23,7 +23,7 @@ export default function PrivacyPage() {
                 <path d="M12 11v10" />
               </svg>
             </div>
-            <span className="text-base font-bold">ePIM</span>
+            <span className="text-base font-bold">EL-PIM</span>
           </Link>
           <Link href="/login" className="text-sm text-indigo-600 hover:underline">
             ← Tilbage til login
@@ -43,7 +43,7 @@ export default function PrivacyPage() {
             <h2 className="text-lg font-semibold text-slate-900">1. Dataansvarlig</h2>
             <p className="text-sm leading-7 text-slate-700">
               {COMPANY} er dataansvarlig for behandlingen af dine personoplysninger i forbindelse med brugen af
-              ePIM-platformen. Har du spørgsmål til vores behandling af dine data, kan du kontakte os på{' '}
+              EL-PIM-platformen. Har du spørgsmål til vores behandling af dine data, kan du kontakte os på{' '}
               <a href={`mailto:${EMAIL}`} className="text-indigo-600 hover:underline">{EMAIL}</a>.
             </p>
           </section>
@@ -143,9 +143,9 @@ export default function PrivacyPage() {
           <section className="space-y-3">
             <h2 className="text-lg font-semibold text-slate-900">8. Cookies og lokal lagring</h2>
             <p className="text-sm leading-7 text-slate-700">
-              ePIM anvender <code className="rounded bg-slate-100 px-1 text-xs">localStorage</code> til at
+              EL-PIM anvender <code className="rounded bg-slate-100 px-1 text-xs">localStorage</code> til at
               gemme din session-token lokalt i browseren — denne forlader ikke din enhed, medmindre du er i gang
-              med et API-kald. Derudover sættes en session-cookie (<code className="rounded bg-slate-100 px-1 text-xs">epim_authed</code>)
+              med et API-kald. Derudover sættes en session-cookie (<code className="rounded bg-slate-100 px-1 text-xs">elpim_authed</code>)
               udelukkende til at styre ruteadgang; den indeholder ingen personoplysninger.
               Vi anvender ikke tredjeparts tracking-cookies eller annoncecookies.
             </p>

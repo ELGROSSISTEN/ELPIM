@@ -116,7 +116,7 @@ export default function SyncRunsPage() {
     }
   };
 
-  useEffect(() => { document.title = 'Synkroniseringer | ePIM'; }, []);
+  useEffect(() => { document.title = 'Synkroniseringer | EL-PIM'; }, []);
   useEffect(() => { void load(page); }, [page]); // eslint-disable-line
 
   const showFlash = (ok: boolean, msg: string) => {
@@ -238,7 +238,7 @@ export default function SyncRunsPage() {
                       {run.status === 'failed' && (
                         <div className="mt-2 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                           <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 text-red-500" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
-                          <span>Synkroniseringen fejlede. <a href="mailto:support@epim.io" className="font-medium underline underline-offset-2 hover:text-red-900 transition">Kontakt ePIM support →</a></span>
+                          <span>Synkroniseringen fejlede. <a href="mailto:support@el-grossisten.dk" className="font-medium underline underline-offset-2 hover:text-red-900 transition">Kontakt EL-PIM support →</a></span>
                         </div>
                       )}
                     </div>
@@ -288,7 +288,7 @@ export default function SyncRunsPage() {
             </div>
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 space-y-1">
               <p>Dette vil gendanne <strong>{rollbackRun.productCount} produkt{rollbackRun.productCount !== 1 ? 'er' : ''}</strong> til tilstanden <strong>FØR</strong> denne synkronisering og sende de gendannede værdier til Shopify.</p>
-              <p className="text-xs opacity-80 mt-1.5">Felter som er ændret <em>efter</em> denne synkronisering bevares i ePIM, men overskrides i Shopify.</p>
+              <p className="text-xs opacity-80 mt-1.5">Felter som er ændret <em>efter</em> denne synkronisering bevares i EL-PIM, men overskrides i Shopify.</p>
             </div>
             <div className="flex gap-2">
               <button

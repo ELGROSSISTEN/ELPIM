@@ -7,7 +7,7 @@ export default function MappingsRedirectPage() {
   const router = useRouter();
 
   useEffect(() => {
-    document.title = 'Mappings | ePIM';
+    document.title = 'Mappings | EL-PIM';
     router.replace('/settings/fields');
   }, [router]);
 

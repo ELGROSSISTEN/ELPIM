@@ -1,4 +1,4 @@
-# ePIM
+# EL-PIM
 
 Shopify-first Cloud PIM monorepo (Next.js + Fastify + BullMQ + Prisma/Postgres + Redis), built with pnpm + Turborepo.
 

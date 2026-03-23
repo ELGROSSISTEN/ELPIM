@@ -132,7 +132,7 @@ export default function ProductsPage() {
   const collectionDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    document.title = 'Produkter | ePIM';
+    document.title = 'Produkter | EL-PIM';
     const handler = (e: MouseEvent) => {
       if (collectionDropdownRef.current && !collectionDropdownRef.current.contains(e.target as Node)) {
         setCollectionDropdownOpen(false);

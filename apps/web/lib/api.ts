@@ -1,7 +1,7 @@
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
-const TOKEN_KEY = 'epim_token';
-const ACTIVE_SHOP_KEY = 'epim_active_shop_id';
+const TOKEN_KEY = 'elpim_token';
+const ACTIVE_SHOP_KEY = 'elpim_active_shop_id';
 
 export const getToken = (): string | null => {
   if (typeof window === 'undefined') {
@@ -10,7 +10,7 @@ export const getToken = (): string | null => {
   return localStorage.getItem(TOKEN_KEY);
 };
 
-const AUTH_COOKIE = 'epim_authed';
+const AUTH_COOKIE = 'elpim_authed';
 
 const setCookie = (name: string, value: string, days = 365): void => {
   if (typeof document === 'undefined') return;

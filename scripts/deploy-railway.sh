@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Deploy ePIM monorepo to Railway
+# Deploy EL-PIM monorepo to Railway
 # Usage: ./scripts/deploy-railway.sh [api|worker|web|all]
 
 PROJECT="elpim-prod"

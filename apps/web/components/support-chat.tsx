@@ -19,7 +19,7 @@ export function SupportChat() {
       setSent(true);
       setMessage('');
     } catch {
-      setError('Kunne ikke sende besked. Prøv igen eller skriv til support@epim.io');
+      setError('Kunne ikke sende besked. Prøv igen eller skriv til support@el-grossisten.dk');
     } finally {
       setSending(false);
     }

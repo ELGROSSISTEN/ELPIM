@@ -17,7 +17,7 @@
     "dev": "tsc -p tsconfig.json --watch",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "DATABASE_URL=${DATABASE_URL:-postgresql://$USER@localhost:5432/epim} MASTER_ENCRYPTION_KEY=${MASTER_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef} vitest run --passWithNoTests",
+    "test": "DATABASE_URL=${DATABASE_URL:-postgresql://$USER@localhost:5432/elpim} MASTER_ENCRYPTION_KEY=${MASTER_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef} vitest run --passWithNoTests",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "seed": "tsx prisma/seed.ts",

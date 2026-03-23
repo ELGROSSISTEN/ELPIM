@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '../lib/api';
 import { backgroundActivityEventName } from '../lib/background-activity';
 
-const DISMISSED_KEY = 'epim:bg-activity-dismissed';
+const DISMISSED_KEY = 'elpim:bg-activity-dismissed';
 
 const getDismissed = (): Set<string> => {
   if (typeof window === 'undefined') return new Set();

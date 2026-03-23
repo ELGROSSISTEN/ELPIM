@@ -59,7 +59,7 @@ export default function TeamPage() {
   };
 
   useEffect(() => {
-    document.title = 'Team | ePIM';
+    document.title = 'Team | EL-PIM';
     apiFetch<TenancyContext>('/tenancy/context')
       .then((ctx) => {
         const first = ctx.organizations?.[0] ?? null;

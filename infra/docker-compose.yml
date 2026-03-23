@@ -2,24 +2,24 @@ version: '3.9'
 services:
   postgres:
     image: postgres:16
-    container_name: epim-postgres
+    container_name: elpim-postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: epim
+      POSTGRES_DB: elpim
     ports:
       - '5432:5432'
     volumes:
-      - epim-postgres-data:/var/lib/postgresql/data
+      - elpim-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U postgres -d epim']
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d elpim']
       interval: 5s
       timeout: 5s
       retries: 20
 
   redis:
     image: redis:7
-    container_name: epim-redis
+    container_name: elpim-redis
     ports:
       - '6379:6379'
     command: redis-server --save '' --appendonly no
@@ -30,4 +30,4 @@ services:
       retries: 20
 
 volumes:
-  epim-postgres-data:
+  elpim-postgres-data:

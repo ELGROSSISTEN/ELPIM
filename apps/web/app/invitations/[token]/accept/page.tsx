@@ -38,7 +38,7 @@ export default function AcceptInvitationPage() {
   };
 
   useEffect(() => {
-    document.title = 'Acceptér invitation | ePIM';
+    document.title = 'Acceptér invitation | EL-PIM';
   }, []);
 
   useEffect(() => {
@@ -128,7 +128,7 @@ export default function AcceptInvitationPage() {
       <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
         <div className="w-full max-w-sm bg-white rounded-2xl shadow-md p-8 space-y-5">
           <div className="text-center space-y-1">
-            <div className="text-2xl font-bold text-slate-800">ePIM</div>
+            <div className="text-2xl font-bold text-slate-800">EL-PIM</div>
             <h1 className="text-lg font-semibold text-slate-700">Opret din konto</h1>
             <p className="text-sm text-slate-500">
               Du er inviteret til <strong>{orgName}</strong>. Udfyld dit navn for at oprette din konto og acceptere invitationen.

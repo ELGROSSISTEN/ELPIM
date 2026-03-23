@@ -239,7 +239,7 @@ export default function PromptsPage() {
     }
   };
 
-  useEffect(() => { document.title = 'AI-prompts | ePIM'; void load(); }, []);
+  useEffect(() => { document.title = 'AI-prompts | EL-PIM'; void load(); }, []);
 
   const saveIntroduction = async (): Promise<void> => {
     setSavingIntro(true);

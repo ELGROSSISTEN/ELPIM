@@ -402,14 +402,14 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   // Persist sidebar collapsed state
   useEffect(() => {
-    const stored = localStorage.getItem('epim_sidebar_collapsed');
+    const stored = localStorage.getItem('elpim_sidebar_collapsed');
     if (stored === 'true') setSidebarCollapsed(true);
   }, []);
 
   const toggleSidebar = () => {
     setSidebarCollapsed((prev) => {
       const next = !prev;
-      localStorage.setItem('epim_sidebar_collapsed', String(next));
+      localStorage.setItem('elpim_sidebar_collapsed', String(next));
       return next;
     });
   };
@@ -478,8 +478,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className={`shrink-0 flex items-center pt-5 pb-3 ${sidebarCollapsed ? 'justify-center px-2' : 'justify-between px-4'}`}>
             <Link href="/" className="flex items-center hover:opacity-85 transition-opacity">
               {sidebarCollapsed
-                ? <img src="/logo-icon.webp" alt="ePIM" className="h-7 w-7 object-contain" />
-                : <img src="/logo-white.webp" alt="ePIM" className="h-6 w-auto" />}
+                ? <img src="/logo-icon.webp" alt="EL-PIM" className="h-7 w-7 object-contain" />
+                : <img src="/logo-white.webp" alt="EL-PIM" className="h-6 w-auto" />}
             </Link>
             {!sidebarCollapsed && (
               <button
@@ -653,7 +653,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             ))}
 
-            {/* Mit ePIM accordion */}
+            {/* Mit EL-PIM accordion */}
             {(() => {
               const mitEpimActive = MIT_EPIM_ITEMS.some((item) => isActive(pathname, item.href));
 
@@ -701,7 +701,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                       <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r-full bg-indigo-400" />
                     )}
                     <span className="shrink-0 pl-1"><IconMitEpim /></span>
-                    <span className="flex-1 text-left">Mit ePIM</span>
+                    <span className="flex-1 text-left">Mit EL-PIM</span>
                     <svg
                       className={`h-3.5 w-3.5 shrink-0 transition-transform duration-150 ${mitEpimOpen ? 'rotate-180' : ''}`}
                       viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
@@ -860,7 +860,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <path d="M3 12h18M3 6h18M3 18h18"/>
               </svg>
             </button>
-            <span className="text-sm font-semibold text-slate-700">ePIM</span>
+            <span className="text-sm font-semibold text-slate-700">EL-PIM</span>
           </div>
 
           <CommandPalette />

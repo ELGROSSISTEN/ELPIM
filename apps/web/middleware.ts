@@ -8,7 +8,7 @@ export function middleware(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
 
   const isPublic = PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
-  const authed = request.cookies.get('epim_authed')?.value === '1';
+  const authed = request.cookies.get('elpim_authed')?.value === '1';
 
   // Redirect logged-in users away from login/register
   if (authed && (pathname.startsWith('/login') || pathname.startsWith('/register'))) {
@@ -22,7 +22,7 @@ export function middleware(request: NextRequest): NextResponse {
     return NextResponse.next();
   }
 
-  // epim_authed is a presence-flag cookie set by the client on login.
+  // elpim_authed is a presence-flag cookie set by the client on login.
   // The actual JWT stays in localStorage; this cookie only signals "a session exists"
   // so the edge can gate protected routes without exposing the token server-side.
 

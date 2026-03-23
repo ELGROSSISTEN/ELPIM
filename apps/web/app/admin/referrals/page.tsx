@@ -95,7 +95,7 @@ export default function AdminReferralsPage() {
     }
   };
 
-  useEffect(() => { document.title = 'Referrals — Admin | ePIM'; }, []);
+  useEffect(() => { document.title = 'Referrals — Admin | EL-PIM'; }, []);
   useEffect(() => { void loadCommissions(); }, [commStatus, commPage]); // eslint-disable-line
   useEffect(() => { void loadPayouts(); }, [payStatus, payPage]); // eslint-disable-line
 

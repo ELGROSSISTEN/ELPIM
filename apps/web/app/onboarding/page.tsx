@@ -66,7 +66,7 @@ function OnboardingPage() {
     }
   };
 
-  useEffect(() => { document.title = 'Onboarding | ePIM'; void refreshState(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { document.title = 'Onboarding | EL-PIM'; void refreshState(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-redirect to dashboard if fully onboarded
   useEffect(() => {
@@ -141,7 +141,7 @@ function OnboardingPage() {
                 <line x1="12" y1="22.08" x2="12" y2="12" />
               </svg>
             </div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Velkommen til ePIM</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Velkommen til EL-PIM</h1>
             <p className="mt-2 text-base text-slate-500">Dit produktinformationssystem — klar på 2 minutter.</p>
           </div>
           <div className="space-y-3">
@@ -343,7 +343,7 @@ function OnboardingPage() {
 
           {/* Step 4: Launch */}
           <StepCard
-            step={4} title="Start med ePIM"
+            step={4} title="Start med EL-PIM"
             done={state.hasActiveAccess && state.hasShop}
             active={state.hasActiveAccess && state.hasShop}
             icon={<svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="m22 2-7 20-4-9-9-4z"/><path d="m22 2-11 11"/></svg>}

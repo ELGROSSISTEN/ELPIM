@@ -139,7 +139,7 @@ const getAutoPreset = (
   return null;
 };
 
-const RECENT_COMPETITOR_LINKS_KEY = 'epim_recent_competitor_links';
+const RECENT_COMPETITOR_LINKS_KEY = 'elpim_recent_competitor_links';
 
 const normalizeCompetitorInput = (value: string): string | null => {
   const trimmed = value.trim();
@@ -178,7 +178,7 @@ export default function CollectionDetailsPage() {
   const [draftSaveStatus, setDraftSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [showStamdata, setShowStamdata] = useState(() => {
     if (typeof window === 'undefined') return true;
-    return window.localStorage.getItem('epim_show_stamdata_col') !== 'false';
+    return window.localStorage.getItem('elpim_show_stamdata_col') !== 'false';
   });
 
   // AI state
@@ -270,7 +270,7 @@ export default function CollectionDetailsPage() {
         const c = collectionResponse.collection;
         const collFields = collectionResponse.fields;
         setCollection(c);
-        document.title = `${c.title} | ePIM`;
+        document.title = `${c.title} | EL-PIM`;
         setFields(collFields);
         setHandleEdit(c.handle ?? '');
         initialHandleRef.current = c.handle ?? '';
@@ -624,7 +624,7 @@ export default function CollectionDetailsPage() {
   const toggleStamdata = (): void => {
     const next = !showStamdata;
     setShowStamdata(next);
-    if (typeof window !== 'undefined') window.localStorage.setItem('epim_show_stamdata_col', String(next));
+    if (typeof window !== 'undefined') window.localStorage.setItem('elpim_show_stamdata_col', String(next));
   };
 
   const isAdmin = userRole === 'owner' || userPlatformRole === 'platform_admin' || userPlatformRole === 'platform_support';

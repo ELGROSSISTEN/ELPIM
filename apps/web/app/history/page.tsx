@@ -93,7 +93,7 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    document.title = 'Historik | ePIM';
+    document.title = 'Historik | EL-PIM';
     setLoading(true);
     Promise.all([
       apiFetch<{ logs: Change[] }>('/changelog'),

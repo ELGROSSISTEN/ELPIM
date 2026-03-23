@@ -62,7 +62,7 @@ const currentMonthKey = (): string => {
 };
 
 export default function BillingSettingsPage() {
-  useEffect(() => { document.title = 'Fakturering (admin) | ePIM'; }, []);
+  useEffect(() => { document.title = 'Fakturering (admin) | EL-PIM'; }, []);
 
   const [monthKey, setMonthKey] = useState(currentMonthKey());
   const [shopIdFilter, setShopIdFilter] = useState('');

@@ -62,7 +62,7 @@ export default function AdminUsagePage() {
   const [activeTab, setActiveTab] = useState<'users' | 'daily' | 'log'>('daily');
 
   useEffect(() => {
-    document.title = 'AI-forbrug | ePIM';
+    document.title = 'AI-forbrug | EL-PIM';
     void Promise.all([
       apiFetch<{ rows: UsageRow[] }>('/admin/usage-per-user').then((r) => setRows(r.rows)),
       apiFetch<{ rows: DayRow[] }>('/admin/usage-daily').then((r) => setDailyRows(r.rows)),

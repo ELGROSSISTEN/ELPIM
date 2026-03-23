@@ -801,7 +801,7 @@ function ShopManagementPanel({
     <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-4 space-y-4">
       {/* Display name */}
       <div>
-        <label className="mb-1 block text-xs font-medium text-slate-600">Visningsnavn <span className="text-slate-400 font-normal">(vises i stedet for shop-URL i ePIM)</span></label>
+        <label className="mb-1 block text-xs font-medium text-slate-600">Visningsnavn <span className="text-slate-400 font-normal">(vises i stedet for shop-URL i EL-PIM)</span></label>
         <div className="flex items-center gap-2">
           <input
             type="text"
@@ -1019,7 +1019,7 @@ function WebshopsPage() {
   };
 
   useEffect(() => {
-    document.title = 'Webshops | ePIM';
+    document.title = 'Webshops | EL-PIM';
     setActiveShopIdState(getActiveShopId());
 
     const init = async (): Promise<void> => {
@@ -1044,8 +1044,8 @@ function WebshopsPage() {
         }
 
         if (searchParams.get('checkout') === 'complete') {
-          const pendingUrl = (typeof window !== 'undefined' ? sessionStorage.getItem('epim_pending_shop_url') : null) ?? '';
-          if (typeof window !== 'undefined') sessionStorage.removeItem('epim_pending_shop_url');
+          const pendingUrl = (typeof window !== 'undefined' ? sessionStorage.getItem('elpim_pending_shop_url') : null) ?? '';
+          if (typeof window !== 'undefined') sessionStorage.removeItem('elpim_pending_shop_url');
           if (typeof window !== 'undefined') window.history.replaceState({}, '', '/settings/shops');
           setAddModalPrefillUrl(pendingUrl);
           setAddModalInitialStep('connect');

@@ -620,8 +620,8 @@ const createUsageNoticeIfMissing = async (args: {
 
   await sendUsageNoticeEmail({
     recipients,
-    subject: args.kind === 'overage_started' ? 'ePIM: Overforbrug af AI datapunkter er startet' : 'ePIM: 100/100 inkluderede AI datapunkter er brugt',
-    html: `<p>Hej,</p><p>Shoppen har brugt <strong>${args.consumedUnits}</strong> AI-genererede datapunkter i ${args.monthKey}.</p><p>Inkluderet i abonnementet: <strong>${args.includedUnits}</strong>.</p>${overageText}<p>Du kan følge forbrug i ePIM under abonnement/forbrug.</p>${env.APP_BASE_URL ? `<p><a href="${env.APP_BASE_URL}">Gå til ePIM</a></p>` : ''}`,
+    subject: args.kind === 'overage_started' ? 'EL-PIM: Overforbrug af AI datapunkter er startet' : 'EL-PIM: 100/100 inkluderede AI datapunkter er brugt',
+    html: `<p>Hej,</p><p>Shoppen har brugt <strong>${args.consumedUnits}</strong> AI-genererede datapunkter i ${args.monthKey}.</p><p>Inkluderet i abonnementet: <strong>${args.includedUnits}</strong>.</p>${overageText}<p>Du kan følge forbrug i EL-PIM under abonnement/forbrug.</p>${env.APP_BASE_URL ? `<p><a href="${env.APP_BASE_URL}">Gå til EL-PIM</a></p>` : ''}`,
   });
 };
 
@@ -1339,7 +1339,7 @@ const webhookWorker = new Worker(
         return;
       }
 
-      // collections/delete — remove collection from ePIM
+      // collections/delete — remove collection from EL-PIM
       if (topic === 'webhook_collections/delete') {
         const collectionGid = payload.admin_graphql_api_id as string | undefined;
         if (collectionGid) {
@@ -1418,13 +1418,13 @@ const webhookWorker = new Worker(
         });
 
         if (existing) {
-          // Conflict detection: ePIM has local changes that haven't been pushed out yet
+          // Conflict detection: EL-PIM has local changes that haven't been pushed out yet
           const hasLocalChanges =
             existing.lastShopifySyncAt != null &&
             existing.updatedAt.getTime() > existing.lastShopifySyncAt.getTime() + 1000;
 
           if (hasLocalChanges) {
-            // Conflict hold — record Shopify's intent but don't overwrite ePIM data.
+            // Conflict hold — record Shopify's intent but don't overwrite EL-PIM data.
             // Use raw SQL to avoid bumping @updatedAt (which would cause perpetual conflict holds).
             await prisma.$executeRaw`UPDATE "Product" SET "shopifyUpdatedAt" = ${now} WHERE id = ${existing.id}`;
             await prisma.changeLog.create({
@@ -1440,7 +1440,7 @@ const webhookWorker = new Worker(
             });
             logger.warn(
               { productId: existing.id, existingUpdatedAt: existing.updatedAt, lastSyncAt: existing.lastShopifySyncAt },
-              'webhook conflict hold: ePIM has local changes, not applying Shopify inbound',
+              'webhook conflict hold: EL-PIM has local changes, not applying Shopify inbound',
             );
           } else {
             // Clean apply — no local pending changes, safe to accept Shopify data
@@ -1668,7 +1668,7 @@ async function handleImportCsvV2(syncJob: { id: string; shopId: string; payloadJ
       const tagsRaw = mapped.tags?.trim() || '';
       const tagsArray = tagsRaw ? tagsRaw.split(',').map((t) => t.trim()).filter(Boolean) : [];
 
-      // Find existing product in ePIM — by GID, handle, or SKU (variant)
+      // Find existing product in EL-PIM — by GID, handle, or SKU (variant)
       let existingProduct: { id: string; shopifyProductGid: string | null } | null = null;
       if (shopifyGid) {
         existingProduct = await prisma.product.findFirst({
@@ -1700,7 +1700,7 @@ async function handleImportCsvV2(syncJob: { id: string; shopId: string; payloadJ
       }
 
       if (existingProduct) {
-        // Update existing product in ePIM
+        // Update existing product in EL-PIM
         await prisma.snapshot.create({
           data: { shopId: syncJob.shopId, entityType: 'product', entityId: existingProduct.id, blobJson: existingProduct, reason: 'import_apply' },
         });
@@ -1756,7 +1756,7 @@ async function handleImportCsvV2(syncJob: { id: string; shopId: string; payloadJ
         const shopifyProduct = createResult.productCreate?.product;
         if (!shopifyProduct) throw new Error('Shopify productCreate returned no product');
 
-        // Store in ePIM
+        // Store in EL-PIM
         await prisma.product.create({
           data: {
             shopId: syncJob.shopId,
@@ -2436,7 +2436,7 @@ const altTextWorker = new Worker(
   { connection },
 );
 
-logger.info('ePIM worker started');
+logger.info('EL-PIM worker started');
 
 // ---------------------------------------------------------------------------
 // Feed crawl queue + scheduler

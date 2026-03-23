@@ -137,7 +137,7 @@ export default function CollectionsPage() {
   };
 
   useEffect(() => {
-    document.title = 'Kollektioner | ePIM';
+    document.title = 'Kollektioner | EL-PIM';
   }, []);
 
   useEffect(() => {

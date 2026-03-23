@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { apiFetch } from '../../lib/api';
 
-const FEED_BASE_URL = process.env.NEXT_PUBLIC_FEED_URL ?? 'https://feeds.epim.dk';
+const FEED_BASE_URL = process.env.NEXT_PUBLIC_FEED_URL ?? 'https://feeds.el-grossisten.dk';
 
 type FeedMapping = { fieldName: string; source: string };
 
@@ -484,7 +484,7 @@ export default function FeedsPage() {
 
       <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
         <p className="text-xs text-gray-500 leading-relaxed">
-          <strong className="text-gray-700">Om feeds:</strong> Datafeedet henter produkter direkte fra Shopify, ikke fra ePIM — det sikrer at det er de faktisk publicerede data der sendes ud. Google Shopping kræver et aktivt Merchant Center-konto, og feed-URL&apos;en indsættes som datafeed i Google Merchant Center.
+          <strong className="text-gray-700">Om feeds:</strong> Datafeedet henter produkter direkte fra Shopify, ikke fra EL-PIM — det sikrer at det er de faktisk publicerede data der sendes ud. Google Shopping kræver et aktivt Merchant Center-konto, og feed-URL&apos;en indsættes som datafeed i Google Merchant Center.
         </p>
       </div>
     </div>

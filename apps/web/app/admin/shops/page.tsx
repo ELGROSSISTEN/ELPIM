@@ -143,7 +143,7 @@ export default function AdminShopsPage() {
     }
   };
 
-  useEffect(() => { document.title = 'Webshops — Admin | ePIM'; }, []);
+  useEffect(() => { document.title = 'Webshops — Admin | EL-PIM'; }, []);
   useEffect(() => { void loadShops(); }, [shopQuery, planFilter, statusFilter, sortBy, sortDir, page, pageSize]); // eslint-disable-line
 
   const showFlash = (ok: boolean, msg: string) => { setFlash({ ok, msg }); setTimeout(() => setFlash(null), 5000); };

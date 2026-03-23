@@ -26,7 +26,7 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    document.title = 'Indstillinger | ePIM';
+    document.title = 'Indstillinger | EL-PIM';
     apiFetch<{ settings: ShopSetting[] }>('/settings')
       .then((response) => {
         const mapped = response.settings.reduce<Record<string, string>>((acc, item) => {

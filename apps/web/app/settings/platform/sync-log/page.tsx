@@ -102,7 +102,7 @@ export default function SyncLogPage() {
   };
 
   useEffect(() => {
-    document.title = 'Sync-log | ePIM';
+    document.title = 'Sync-log | EL-PIM';
     apiFetch<{ user: { platformRole?: string } | null }>('/me')
       .then((res) => {
         const role = res.user?.platformRole ?? 'none';

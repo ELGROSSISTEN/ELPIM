@@ -221,7 +221,7 @@ export default function FieldsPage() {
   };
 
   useEffect(() => {
-    document.title = 'Felter | ePIM';
+    document.title = 'Felter | EL-PIM';
     load();
   }, []);
 

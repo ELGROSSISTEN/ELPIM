@@ -117,7 +117,7 @@ export default function VariantDetailsPage() {
         const variantData = variantResponse.variant;
         const variantFields = fieldsResponse.fields.filter((field) => field.scope === 'variant');
         setVariant(variantData);
-        document.title = `${variantData.sku ?? 'Variant'} | ePIM`;
+        document.title = `${variantData.sku ?? 'Variant'} | EL-PIM`;
         setFields(variantFields);
 
         const patch = draftResponse.drafts[0]?.patchJson ?? {};

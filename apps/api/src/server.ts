@@ -85,18 +85,18 @@ const sendMagicLink = async (opts: {
     body: JSON.stringify({
       from: env.EMAIL_FROM,
       to: opts.email,
-      subject: 'Din adgangslink til ePIM',
+      subject: 'Din adgangslink til EL-PIM',
       html: `
         <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:40px 24px">
           <div style="margin-bottom:32px">
-            <span style="font-size:22px;font-weight:700;color:#1e293b">ePIM</span>
+            <span style="font-size:22px;font-weight:700;color:#1e293b">EL-PIM</span>
           </div>
-          <h1 style="font-size:20px;font-weight:700;color:#1e293b;margin:0 0 8px">Log ind på ePIM</h1>
+          <h1 style="font-size:20px;font-weight:700;color:#1e293b;margin:0 0 8px">Log ind på EL-PIM</h1>
           <p style="color:#475569;font-size:15px;line-height:1.6;margin:0 0 24px">
             Klik på knappen nedenfor for at logge ind. Linket er gyldigt i 30 minutter.
           </p>
           <a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;font-size:15px;font-weight:600;text-decoration:none;padding:12px 28px;border-radius:10px">
-            Log ind på ePIM
+            Log ind på EL-PIM
           </a>
           <p style="color:#94a3b8;font-size:13px;margin:32px 0 0">
             Eller kopier dette link ind i din browser:<br>
@@ -105,7 +105,7 @@ const sendMagicLink = async (opts: {
           <hr style="border:none;border-top:1px solid #e2e8f0;margin:32px 0">
           <p style="color:#cbd5e1;font-size:12px;margin:0">
             Hvis du ikke har anmodet om dette link, kan du blot ignorere denne e-mail.<br>
-            © ${new Date().getFullYear()} ePIM · <a href="https://epim.dk" style="color:#cbd5e1">epim.dk</a>
+            © ${new Date().getFullYear()} EL-PIM · <a href="https://el-grossisten.dk" style="color:#cbd5e1">el-grossisten.dk</a>
           </p>
         </div>
       `,
@@ -349,7 +349,7 @@ const getCurrentUser = async (request: any): Promise<any | null> => {
 };
 
 const getHeaderShopId = (request: any): string | null => {
-  const value = request.headers['x-epim-shop-id'];
+  const value = request.headers['x-elpim-shop-id'];
   if (typeof value !== 'string') {
     return null;
   }
@@ -662,7 +662,7 @@ type CvrData = { name: string; address: string };
 const lookupCvr = async (cvrNumber: string): Promise<CvrData | null> => {
   try {
     const response = await fetch(`https://cvrapi.dk/api?country=DK&vat=${encodeURIComponent(cvrNumber)}`, {
-      headers: { 'User-Agent': 'ePIM/1.0' },
+      headers: { 'User-Agent': 'EL-PIM/1.0' },
       signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) return null;
@@ -2738,8 +2738,8 @@ app.post('/billing/notices/resend', async (request: any, reply: any) => {
     recipients,
     subject:
       parsed.data.kind === 'overage_started'
-        ? 'ePIM: Overforbrug af AI datapunkter er startet'
-        : 'ePIM: 100/100 inkluderede AI datapunkter er brugt',
+        ? 'EL-PIM: Overforbrug af AI datapunkter er startet'
+        : 'EL-PIM: 100/100 inkluderede AI datapunkter er brugt',
     html: `<p>Hej,</p><p>Shoppen har brugt <strong>${consumedUnits}</strong> AI-genererede datapunkter i ${parsed.data.monthKey}.</p><p>Inkluderet i abonnementet: <strong>${includedUnits}</strong>.</p><p>${
       parsed.data.kind === 'overage_started'
         ? 'Gratis grænse er overskredet. Nye AI-genererede datapunkter faktureres nu.'
@@ -6414,7 +6414,7 @@ app.patch('/products/:id', async (request: any, reply) => {
   return { product: updated, pendingSync: shouldSyncNow, syncJobId };
 });
 
-// Bulk delete products (ePIM-only, does not push to Shopify)
+// Bulk delete products (EL-PIM-only, does not push to Shopify)
 app.post('/products/bulk-delete', async (request: any, reply: any) => {
   if (!(await withAuth(request, reply))) return;
   const { ids } = (request.body ?? {}) as { ids?: string[] };
@@ -6504,7 +6504,7 @@ app.post('/products/:id/pull-shopify', async (request: any, reply: any) => {
   const sp = result.product;
   const now = new Date();
 
-  // Check for conflict: ePIM has local changes not yet pushed
+  // Check for conflict: EL-PIM has local changes not yet pushed
   const hasLocalChanges =
     product.lastShopifySyncAt != null &&
     product.updatedAt.getTime() > product.lastShopifySyncAt.getTime() + 1000;
@@ -6513,7 +6513,7 @@ app.post('/products/:id/pull-shopify', async (request: any, reply: any) => {
     // Return the Shopify data without applying, let the client decide
     return reply.code(409).send({
       error: 'conflict',
-      message: 'ePIM har lokale ændringer der ikke er skubbet til Shopify. Accepter Shopify-data og overskriv, eller behold ePIM-data.',
+      message: 'EL-PIM har lokale ændringer der ikke er skubbet til Shopify. Accepter Shopify-data og overskriv, eller behold EL-PIM-data.',
       shopifyData: {
         title: sp.title,
         handle: sp.handle,
@@ -7096,7 +7096,7 @@ app.post('/bulk/patch', async (request: any, reply) => {
   const syncJobIds: string[] = [];
   const forwardHeaders: Record<string, string> = {
     authorization: request.headers.authorization as string,
-    ...(request.headers['x-epim-shop-id'] ? { 'x-epim-shop-id': request.headers['x-epim-shop-id'] as string } : {}),
+    ...(request.headers['x-elpim-shop-id'] ? { 'x-elpim-shop-id': request.headers['x-elpim-shop-id'] as string } : {}),
   };
 
   for (const productPatch of parsed.data.products) {
@@ -7685,7 +7685,7 @@ app.get('/export.csv', async (request: any, reply) => {
   }
 
   reply.header('Content-Type', 'text/csv; charset=utf-8');
-  reply.header('Content-Disposition', 'attachment; filename="epim-export.csv"');
+  reply.header('Content-Disposition', 'attachment; filename="el-pim-export.csv"');
   return lines.join('\r\n');
 });
 
@@ -9464,7 +9464,7 @@ const buildInvitationEmail = (orgName: string, inviterName: string, acceptUrl: s
           <!-- Header -->
           <tr>
             <td style="background:linear-gradient(135deg,#4f46e5,#6366f1);padding:32px 40px;">
-              <div style="font-size:24px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">ePIM</div>
+              <div style="font-size:24px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">EL-PIM</div>
               <div style="font-size:13px;color:rgba(255,255,255,0.75);margin-top:4px;">Product Information Manager</div>
             </td>
           </tr>
@@ -9475,7 +9475,7 @@ const buildInvitationEmail = (orgName: string, inviterName: string, acceptUrl: s
                 Du er inviteret til ${escapeHtml(orgName)}
               </h1>
               <p style="margin:0 0 24px;font-size:15px;color:#475569;line-height:1.6;">
-                <strong style="color:#1e293b;">${escapeHtml(inviterName)}</strong> har inviteret dig til organisationen <strong style="color:#1e293b;">${escapeHtml(orgName)}</strong> på ePIM.
+                <strong style="color:#1e293b;">${escapeHtml(inviterName)}</strong> har inviteret dig til organisationen <strong style="color:#1e293b;">${escapeHtml(orgName)}</strong> på EL-PIM.
               </p>
               <p style="margin:0 0 32px;font-size:15px;color:#475569;line-height:1.6;">
                 Klik på knappen herunder for at acceptere invitationen og få adgang til arbejdsområdet.
@@ -9501,7 +9501,7 @@ const buildInvitationEmail = (orgName: string, inviterName: string, acceptUrl: s
             <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e2e8f0;">
               <p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.5;">
                 Dette link udl&oslash;ber om 7 dage. Hvis du ikke forventer denne invitation, kan du se bort fra denne e-mail.<br />
-                <strong>ePIM &middot; epim.dk</strong>
+                <strong>EL-PIM &middot; el-grossisten.dk</strong>
               </p>
             </td>
           </tr>
@@ -9554,7 +9554,7 @@ app.post('/organizations/:id/invitations', async (request: any, reply: any) => {
     const inviterName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
     const appUrl = (request.headers.origin as string | undefined) ?? env.APP_BASE_URL ?? '';
     const html = buildInvitationEmail(org.name, inviterName, `${appUrl}/dashboard`);
-    await sendEmail(email, `Du er blevet tilføjet til ${org.name} på ePIM`, html).catch((err) => {
+    await sendEmail(email, `Du er blevet tilføjet til ${org.name} på EL-PIM`, html).catch((err) => {
       request.log.error(err, 'Failed to send direct-add notification email');
     });
     return reply.code(201).send({ added: true, email, role });
@@ -9589,7 +9589,7 @@ app.post('/organizations/:id/invitations', async (request: any, reply: any) => {
   const inviterName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
   const appUrl = (request.headers.origin as string | undefined) ?? env.APP_BASE_URL ?? '';
   const acceptUrl = `${appUrl}/invitations/${invitation.token}/accept`;
-  await sendEmail(email, `Du er inviteret til ${org.name} på ePIM`, buildInvitationEmail(org.name, inviterName, acceptUrl)).catch((err) => {
+  await sendEmail(email, `Du er inviteret til ${org.name} på EL-PIM`, buildInvitationEmail(org.name, inviterName, acceptUrl)).catch((err) => {
     request.log.error(err, 'Failed to send invitation email');
   });
 
@@ -10081,7 +10081,7 @@ app.post('/notify/bulk-done', async (request: any, reply: any) => {
       from: env.EMAIL_FROM,
       to: email,
       subject: `${label} afsluttet`,
-      html: `<p><strong>${label}</strong> er færdig.</p><p>${count ?? 0} poster behandlet i ePIM.</p>`,
+      html: `<p><strong>${label}</strong> er færdig.</p><p>${count ?? 0} poster behandlet i EL-PIM.</p>`,
     }),
   });
   return reply.code(204).send();

@@ -14,11 +14,11 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: epim
+          POSTGRES_DB: elpim
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U postgres -d epim"
+          --health-cmd="pg_isready -U postgres -d elpim"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
@@ -28,7 +28,7 @@ jobs:
           - 6379:6379
 
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/epim
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/elpim
       REDIS_URL: redis://localhost:6379
       JWT_SECRET: ci_jwt_secret_123456789
       MASTER_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef

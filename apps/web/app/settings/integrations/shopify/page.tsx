@@ -139,7 +139,7 @@ function ShopifyIntegrationPage() {
   };
 
   useEffect(() => {
-    document.title = 'Shopify integration | ePIM';
+    document.title = 'Shopify integration | EL-PIM';
     Promise.all([
       apiFetch<{ shop: { id: string; shopUrl: string } | null }>('/shops/current'),
       apiFetch<{ user: { platformRole?: string } | null }>('/me'),

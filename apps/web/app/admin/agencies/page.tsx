@@ -71,7 +71,7 @@ export default function AdminAgenciesPage() {
     }
   };
 
-  useEffect(() => { document.title = 'Agencies — Admin | ePIM'; }, []);
+  useEffect(() => { document.title = 'Agencies — Admin | EL-PIM'; }, []);
   useEffect(() => { void loadAgencies(); }, [page]); // eslint-disable-line
 
   const openLink = (agencyId: string): void => {

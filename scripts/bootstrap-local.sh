@@ -7,8 +7,8 @@ cd "$ROOT_DIR"
 PG_BIN_DIR="/opt/homebrew/opt/postgresql@16/bin"
 PG_DATA_DIR="$ROOT_DIR/.local/postgres"
 PG_PORT="5433"
-DB_NAME="epim"
-DB_USER="${USER:-epim}"
+DB_NAME="elpim"
+DB_USER="${USER:-elpim}"
 
 if [[ ! -f "$ROOT_DIR/.env" ]]; then
   cat > "$ROOT_DIR/.env" <<EOF
@@ -32,7 +32,7 @@ fi
 
 mkdir -p "$PG_DATA_DIR"
 if [[ ! -f "$PG_DATA_DIR/PG_VERSION" ]]; then
-  "$PG_BIN_DIR/initdb" -D "$PG_DATA_DIR" >/tmp/epim-initdb.log 2>&1
+  "$PG_BIN_DIR/initdb" -D "$PG_DATA_DIR" >/tmp/elpim-initdb.log 2>&1
 fi
 
 if ! nc -z localhost "$PG_PORT" >/dev/null 2>&1; then

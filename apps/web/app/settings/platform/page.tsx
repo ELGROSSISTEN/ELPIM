@@ -77,7 +77,7 @@ export default function PlatformSettingsPage() {
   const [isSavingBanner, setIsSavingBanner] = useState(false);
 
   useEffect(() => {
-    document.title = 'Platform | ePIM';
+    document.title = 'Platform | EL-PIM';
     Promise.all([
       apiFetch<MeResponse>('/me'),
       apiFetch<PlatformSettingsResponse>('/admin/platform-settings').catch(() => null as any),

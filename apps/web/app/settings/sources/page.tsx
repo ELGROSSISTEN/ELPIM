@@ -136,7 +136,7 @@ export default function SourcesPage() {
   };
 
   useEffect(() => {
-    document.title = 'Datakilder | ePIM';
+    document.title = 'Datakilder | EL-PIM';
     void load();
   }, []);
 
@@ -418,7 +418,7 @@ export default function SourcesPage() {
                   value={form.url}
                   onChange={(e) => setForm((p) => ({ ...p, url: e.target.value }))}
                 />
-                <p className="text-xs text-slate-400">Brug dynamiske variabler i URL&apos;en — ePIM erstatter dem med faktiske produktværdier ved generering.</p>
+                <p className="text-xs text-slate-400">Brug dynamiske variabler i URL&apos;en — EL-PIM erstatter dem med faktiske produktværdier ved generering.</p>
                 <div className="flex flex-wrap gap-1.5 pt-0.5">
                   {LIVE_LOOKUP_VARIABLES.map(({ token, description }) => (
                     <button
@@ -446,7 +446,7 @@ export default function SourcesPage() {
                     <option value="every_3_days">Hver 3. dag</option>
                     <option value="weekly">Hver uge (anbefalet)</option>
                   </select>
-                  <p className="text-xs text-slate-400">Hvor ofte ePIM henter ny data fra URL&apos;en.</p>
+                  <p className="text-xs text-slate-400">Hvor ofte EL-PIM henter ny data fra URL&apos;en.</p>
                 </div>
               </>
             ) : (
@@ -821,7 +821,7 @@ export default function SourcesPage() {
 
           {scanResult.headers.length > 0 ? (
             <div className="mt-4">
-              <h3 className="text-sm font-semibold text-slate-800">Kolonne → ePIM-felt mapping</h3>
+              <h3 className="text-sm font-semibold text-slate-800">Kolonne → EL-PIM-felt mapping</h3>
               <p className="mt-1 text-xs text-slate-500">
                 Map CSV-kolonner til custom felter. Ved &laquo;Anvend&raquo; skrives værdien direkte.
                 Kolonner er også tilgængelige som <code className="rounded bg-slate-100 px-1 text-[10px]">{'{'}{'{'} supplier_KOLONNE {'}'}{'}'}</code> i AI-prompts.

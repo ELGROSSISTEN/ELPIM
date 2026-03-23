@@ -107,7 +107,7 @@ export default function HomePage() {
   const [expandedMonitor, setExpandedMonitor] = useState<string | null>(null);
 
   useEffect(() => {
-    document.title = 'Dashboard | ePIM';
+    document.title = 'Dashboard | EL-PIM';
     void Promise.all([
       apiFetch<OverviewResponse>('/dashboard/overview').then(setData).catch(() => setData(null)),
       apiFetch<{ user: { firstName?: string | null } | null }>('/me').then((r) => setFirstName(r.user?.firstName ?? null)).catch(() => {}),
@@ -312,7 +312,7 @@ export default function HomePage() {
             <div className="px-5 py-10 text-center text-sm text-slate-400">
               {overview.products === 0
                 ? <><span>Ingen produkter endnu — </span><Link href="/settings/integrations/shopify" className="text-indigo-600 underline">hent fra Shopify</Link><span> for at komme i gang.</span></>
-                : 'Ingen nylige ændringer i ePIM.'}
+                : 'Ingen nylige ændringer i EL-PIM.'}
             </div>
           ) : (
             <div className="divide-y divide-slate-50">
@@ -416,7 +416,7 @@ export default function HomePage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="h-2 w-2 rounded-full shrink-0 bg-violet-400" />
-                        <span className="text-xs text-slate-500">ePIM-kladder</span>
+                        <span className="text-xs text-slate-500">EL-PIM-kladder</span>
                         <span className="ml-auto text-xs font-semibold text-slate-800">{epimDraft.toLocaleString('da-DK')}</span>
                       </div>
                     </div>

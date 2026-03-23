@@ -11,7 +11,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { document.title = 'Log ind | ePIM'; }, []);
+  useEffect(() => { document.title = 'Log ind | EL-PIM'; }, []);
 
   const submit = async (): Promise<void> => {
     setError('');

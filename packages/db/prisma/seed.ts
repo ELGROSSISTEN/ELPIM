@@ -31,10 +31,10 @@ async function main(): Promise<void> {
   const periodEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999));
 
   const organization = await db.organization.upsert({
-    where: { id: 'org_demo_epim' },
+    where: { id: 'org_demo_elpim' },
     update: { name: 'Demo Organization', cvrNumber: '10000001', type: 'regular' },
     create: {
-      id: 'org_demo_epim',
+      id: 'org_demo_elpim',
       name: 'Demo Organization',
       cvrNumber: '10000001',
       type: 'regular',
@@ -56,14 +56,14 @@ async function main(): Promise<void> {
   });
 
   const user = await db.user.upsert({
-    where: { email: 'owner@epim.local' },
+    where: { email: 'owner@elpim.local' },
     update: {
       role: 'owner',
       platformRole: 'platform_admin',
       shopId: shop.id,
     },
     create: {
-      email: 'owner@epim.local',
+      email: 'owner@elpim.local',
       passwordHash: hashPassword('changeme123'),
       role: 'owner',
       platformRole: 'platform_admin',
@@ -133,7 +133,7 @@ async function main(): Promise<void> {
         shopId: shop.id,
         title: 'Demo Product',
         handle: 'demo-product',
-        vendor: 'ePIM',
+        vendor: 'EL-PIM',
         productType: 'Demo',
         status: 'ACTIVE',
         tagsJson: ['demo'],
@@ -187,10 +187,10 @@ async function main(): Promise<void> {
   });
 
   const agencyUser = await db.user.upsert({
-    where: { email: 'agency@epim.local' },
+    where: { email: 'agency@elpim.local' },
     update: { role: 'owner' },
     create: {
-      email: 'agency@epim.local',
+      email: 'agency@elpim.local',
       passwordHash: hashPassword('changeme123'),
       role: 'owner',
       platformRole: 'none',
