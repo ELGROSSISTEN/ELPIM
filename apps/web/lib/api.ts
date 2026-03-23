@@ -62,7 +62,7 @@ export const apiFetch = async <T>(path: string, init: RequestInit = {}): Promise
     headers: {
       ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(activeShopId ? { 'X-EPIM-Shop-Id': activeShopId } : {}),
+      ...(activeShopId ? { 'X-ELPIM-Shop-Id': activeShopId } : {}),
       ...(init.headers ?? {}),
     },
   });

@@ -1212,6 +1212,29 @@ app.post('/auth/register', { config: { rateLimit: { max: 5, timeWindow: '15 minu
   return reply.code(201).send({ sent: true });
 });
 
+app.post('/auth/passcode', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request: any, reply: any) => {
+  const { code } = (request.body ?? {}) as { code?: string };
+  if (!code || code !== env.ACCESS_CODE) {
+    return reply.code(401).send({ error: 'Forkert adgangskode.' });
+  }
+
+  const user = await prisma.user.findFirst({
+    where: { platformRole: 'platform_admin' },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  if (!user) {
+    return reply.code(500).send({ error: 'Ingen systembruger fundet. Kør seed.' });
+  }
+
+  const token = app.jwt.sign(
+    { id: user.id, email: user.email, role: user.role, shopId: user.shopId, platformRole: user.platformRole },
+    { expiresIn: '365d' },
+  );
+
+  return { token, redirectTo: '/dashboard/products' };
+});
+
 app.post('/auth/login', { config: { rateLimit: { max: 10, timeWindow: '5 minutes' } } }, async (request: any, reply: any) => {
   const parsed = loginSchema.safeParse(request.body);
   if (!parsed.success) {
