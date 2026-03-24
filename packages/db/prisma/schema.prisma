@@ -881,6 +881,8 @@ model RunCampaign {
   doneItems        Int      @default(0)
   failedItems      Int      @default(0)
   skippedItems     Int      @default(0)
+  tokensUsed       Int      @default(0)
+  costUsd          Decimal  @default(0)
   startedAt        DateTime?
   completedAt      DateTime?
   createdAt        DateTime @default(now())
@@ -894,17 +896,20 @@ model RunCampaign {
 }
 
 model RunCampaignItem {
-  id            String    @id @default(cuid())
-  campaignId    String
-  productId     String
-  title         String?
-  sku           String?
-  status        String    @default("pending") // pending | processing | done | failed | skipped
-  fieldsDoneJson Json     @default("{}") // { fieldDefId: "done"|"failed"|"skipped" }
-  processedAt   DateTime?
-  errorMsg      String?
-  sortOrder     Int       @default(0)
-  createdAt     DateTime  @default(now())
+  id              String    @id @default(cuid())
+  campaignId      String
+  productId       String
+  title           String?
+  sku             String?
+  ean             String?
+  status          String    @default("pending") // pending | processing | done | failed | skipped
+  fieldsDoneJson  Json      @default("{}") // { fieldDefId: "done"|"failed"|"skipped" }
+  fieldValuesJson Json      @default("{}") // { fieldDefId: "generated text..." }
+  syncedAt        DateTime?
+  processedAt     DateTime?
+  errorMsg        String?
+  sortOrder       Int       @default(0)
+  createdAt       DateTime  @default(now())
 
   campaign RunCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   product  Product     @relation(fields: [productId], references: [id])

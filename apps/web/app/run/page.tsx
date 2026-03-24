@@ -5,7 +5,7 @@ import { apiFetch } from '../../lib/api';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-type FieldDef = { id: string; label: string; type: string };
+type FieldDef = { id: string; label: string; type: string; isBuiltIn?: boolean };
 type Source = { id: string; name: string; active: boolean };
 
 type Campaign = {
@@ -13,13 +13,15 @@ type Campaign = {
   fieldsJson: string[]; batchSize: number; concurrency: number;
   collectionsFirst: boolean; excludeSkusJson: string[]; overwriteJson: string[];
   totalItems: number; doneItems: number; failedItems: number; skippedItems: number;
+  tokensUsed: number; costUsd: string;
   startedAt: string | null; completedAt: string | null; createdAt: string;
 };
 
 type CampaignItem = {
-  id: string; productId: string; title: string | null; sku: string | null;
+  id: string; productId: string; title: string | null; sku: string | null; ean: string | null;
   status: string; fieldsDoneJson: Record<string, string>;
-  processedAt: string | null; errorMsg: string | null; sortOrder: number;
+  fieldValuesJson: Record<string, string>;
+  syncedAt: string | null; processedAt: string | null; errorMsg: string | null; sortOrder: number;
 };
 
 type LogEntry = {
@@ -29,9 +31,8 @@ type LogEntry = {
 // ── System fields (live on Product record, not FieldValue) ─────────────────
 
 const SYSTEM_FIELD_DEFS: FieldDef[] = [
-  { id: '__title',           label: 'Titel',              type: 'text' },
-  { id: '__description',     label: 'Beskrivelse',        type: 'html' },
-  { id: '__seo_title',       label: 'Meta titel (SEO)',   type: 'text' },
+  { id: '__description',     label: 'Beskrivelse',            type: 'html' },
+  { id: '__seo_title',       label: 'Meta titel (SEO)',       type: 'text' },
   { id: '__seo_description', label: 'Meta beskrivelse (SEO)', type: 'text' },
 ];
 
@@ -97,6 +98,29 @@ function fmtDate(s: string | null): string {
   return new Date(s).toLocaleString('da-DK', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+// gpt-4.1-mini pricing: $0.40/M input, $1.60/M output
+const EST_INPUT_PER_FIELD = 2000; // tokens per product×field
+const EST_OUTPUT_PER_FIELD = 400;
+const INPUT_USD_PER_1K = 0.0004;
+const OUTPUT_USD_PER_1K = 0.0016;
+const USD_TO_DKK = 6.9;
+const FULL_PRODUCT_COUNT = 134000;
+
+function estimateCostDkk(scope: number, fieldCount: number): number {
+  if (fieldCount === 0) return 0;
+  const n = scope === 0 ? FULL_PRODUCT_COUNT : scope;
+  const inputCost = (n * fieldCount * EST_INPUT_PER_FIELD * INPUT_USD_PER_1K) / 1000;
+  const outputCost = (n * fieldCount * EST_OUTPUT_PER_FIELD * OUTPUT_USD_PER_1K) / 1000;
+  return (inputCost + outputCost) * USD_TO_DKK;
+}
+
+function fmtCostDkk(dkk: number): string {
+  if (dkk < 0.01) return '< 0,01 kr.';
+  if (dkk < 1) return `${(dkk).toFixed(2).replace('.', ',')} kr.`;
+  if (dkk < 1000) return `${dkk.toFixed(1).replace('.', ',')} kr.`;
+  return `${Math.round(dkk).toLocaleString('da-DK')} kr.`;
+}
+
 function scopeLabel(total: number): string {
   if (total === 0) return '—';
   if (total <= 100) return '100 produkter (test)';
@@ -107,7 +131,12 @@ function scopeLabel(total: number): string {
 // ── Main component ─────────────────────────────────────────────────────────
 
 export default function RunPage() {
-  useEffect(() => { document.title = 'Kørsel | EL-PIM'; }, []);
+  useEffect(() => {
+    document.title = 'Kørsel | EL-PIM';
+    if ('Notification' in window && Notification.permission === 'default') {
+      void Notification.requestPermission();
+    }
+  }, []);
 
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -133,9 +162,12 @@ export default function RunPage() {
   const [newCollectionsFirst, setNewCollectionsFirst] = useState(true);
   const [newExcludeSkus, setNewExcludeSkus] = useState('');
 
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+
   const [statusMsg, setStatusMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const prevCampaignStatusRef = useRef<string | null>(null);
 
   useEffect(() => { void loadCampaigns(); void loadFieldDefs(); void loadSources(); }, []);
 
@@ -153,6 +185,21 @@ export default function RunPage() {
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [detail?.logs.length]);
+
+  // Browser notification when campaign finishes
+  useEffect(() => {
+    const c = detail?.campaign;
+    if (!c) return;
+    const prev = prevCampaignStatusRef.current;
+    prevCampaignStatusRef.current = c.status;
+    if (prev && prev !== 'done' && c.status === 'done' && 'Notification' in window && Notification.permission === 'granted') {
+      const costDkk = fmtCostDkk(Number(c.costUsd) * USD_TO_DKK);
+      new Notification(`Kørsel "${c.name}" er færdig`, {
+        body: `${c.doneItems.toLocaleString('da-DK')} behandlet · ${c.failedItems} fejlet · ${c.skippedItems} sprunget over · Forbrug: ${costDkk}`,
+        icon: '/favicon.ico',
+      });
+    }
+  }, [detail?.campaign.status]);
 
   const loadCampaigns = async (): Promise<void> => {
     try {
@@ -440,12 +487,12 @@ export default function RunPage() {
                 })}
               </div>
 
-              {/* Custom fields */}
-              {fieldDefs.length > 0 && (
+              {/* Custom fields — exclude built-in system fields (those live in SYSTEM_FIELD_DEFS above) */}
+              {fieldDefs.filter((fd) => !fd.isBuiltIn).length > 0 && (
                 <>
                   <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Brugerdefinerede felter</p>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {fieldDefs.map((fd) => {
+                    {fieldDefs.filter((fd) => !fd.isBuiltIn).map((fd) => {
                       const checked = newFields.includes(fd.id);
                       return (
                         <label
@@ -484,6 +531,22 @@ export default function RunPage() {
                 </>
               )}
             </div>
+
+            {/* Cost estimate */}
+            {newFields.length > 0 && (
+              <div className="rounded-xl bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-100 px-4 py-3 flex items-center gap-3">
+                <div className="text-2xl">🧮</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-slate-700">
+                    Estimeret forbrug: <span className="text-indigo-700">{fmtCostDkk(estimateCostDkk(newScope, newFields.length))}</span>
+                    {newScope === 0 && <span className="text-xs font-normal text-slate-400 ml-1">(for ~{FULL_PRODUCT_COUNT.toLocaleString('da-DK')} produkter)</span>}
+                  </div>
+                  <div className="text-xs text-slate-400 mt-0.5">
+                    {newFields.length} felt{newFields.length !== 1 ? 'er' : ''} × {newScope === 0 ? 'alle' : newScope.toLocaleString('da-DK')} produkter · gpt-4.1-mini priser
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Step 3: Sources */}
             <div>
@@ -642,6 +705,11 @@ export default function RunPage() {
                     <span>Oprettet {fmtDate(campaign.createdAt)}</span>
                     {campaign.startedAt && <span>Startet {fmtDate(campaign.startedAt)}</span>}
                     {campaign.completedAt && <span>Færdig {fmtDate(campaign.completedAt)}</span>}
+                    {campaign.tokensUsed > 0 && (
+                      <span className="text-indigo-500 font-medium">
+                        {campaign.tokensUsed.toLocaleString('da-DK')} tokens · {fmtCostDkk(Number(campaign.costUsd) * USD_TO_DKK)}
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -680,7 +748,7 @@ export default function RunPage() {
                 <div className="mt-5">
                   <div className="h-3 w-full rounded-full bg-slate-100 overflow-hidden">
                     <div
-                      className={`h-3 rounded-full transition-all duration-700 ${campaign.status === 'done' ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                      className={`h-3 rounded-full transition-all duration-700 ${campaign.status === 'done' ? 'bg-gradient-to-r from-emerald-400 to-emerald-600' : 'bg-gradient-to-r from-indigo-400 via-violet-500 to-indigo-500'}`}
                       style={{ width: `${progressPct}%` }}
                     />
                   </div>
@@ -722,52 +790,129 @@ export default function RunPage() {
 
                 <div className="overflow-auto flex-1">
                   <table className="min-w-full text-xs">
-                    <thead className="sticky top-0 bg-white z-10">
+                    <thead className="sticky top-0 bg-white z-10 shadow-sm">
                       <tr className="text-left text-slate-400 border-b border-slate-100">
-                        <th className="py-2 px-3 font-medium">#</th>
+                        <th className="py-2 px-3 font-medium w-8">#</th>
                         <th className="py-2 px-3 font-medium">Produkt</th>
-                        <th className="py-2 px-3 font-medium">SKU</th>
+                        <th className="py-2 px-3 font-medium">EAN</th>
                         <th className="py-2 px-3 font-medium">Status</th>
                         {campaign.fieldsJson.map((fid) => {
                           const fd = fieldDefs.find((f) => f.id === fid) ?? SYSTEM_FIELD_DEFS.find((f) => f.id === fid);
-                          return <th key={fid} className="py-2 px-3 font-medium">{fd?.label ?? fid.slice(0, 8)}</th>;
+                          return <th key={fid} className="py-2 px-3 font-medium max-w-[140px]">{fd?.label ?? fid.slice(0, 8)}</th>;
                         })}
+                        <th className="py-2 px-3 font-medium">Synkroniseret</th>
                         <th className="py-2 px-3 font-medium">Behandlet</th>
-                        <th className="py-2 px-3 font-medium"></th>
+                        <th className="py-2 px-3 font-medium w-6"></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {items.map((item) => (
-                        <tr key={item.id} className="border-b border-slate-50 hover:bg-slate-50 transition">
-                          <td className="py-1.5 px-3 text-slate-300">{item.sortOrder + 1}</td>
-                          <td className="py-1.5 px-3 font-medium text-slate-700 max-w-[180px] truncate">{item.title ?? item.productId.slice(0, 8)}</td>
-                          <td className="py-1.5 px-3 font-mono text-slate-400">{item.sku ?? '—'}</td>
-                          <td className="py-1.5 px-3">
-                            <span className={`rounded-full px-1.5 py-0.5 text-xs font-medium ${STATUS_COLOR[item.status] ?? 'bg-slate-100 text-slate-500'}`}>
-                              {STATUS_DK[item.status] ?? item.status}
-                            </span>
-                          </td>
-                          {campaign.fieldsJson.map((fid) => {
-                            const v = item.fieldsDoneJson?.[fid];
-                            return (
-                              <td key={fid} className="py-1.5 px-3 text-center">
-                                {v === 'done' ? <span className="text-emerald-500 font-bold">✓</span>
-                                  : v === 'failed' ? <span className="text-red-400">✗</span>
-                                  : v === 'skipped' ? <span className="text-slate-300">–</span>
-                                  : <span className="text-slate-200">·</span>}
+                      {items.map((item) => {
+                        const isExpanded = expandedItemId === item.id;
+                        const isProcessing = item.status === 'processing';
+                        const isFailed = item.status === 'failed';
+                        const isDone = item.status === 'done';
+                        const colSpan = 6 + campaign.fieldsJson.length;
+                        return (
+                          <>
+                            <tr
+                              key={item.id}
+                              onClick={() => setExpandedItemId(isExpanded ? null : item.id)}
+                              className={`border-b border-slate-50 cursor-pointer transition-colors
+                                ${isProcessing ? 'animate-pulse bg-blue-50/60' : ''}
+                                ${isDone && !isExpanded ? 'hover:bg-emerald-50/40' : ''}
+                                ${isFailed && !isExpanded ? 'bg-red-50/40 hover:bg-red-50/60' : ''}
+                                ${isExpanded ? 'bg-indigo-50 border-indigo-100' : ''}
+                                ${!isProcessing && !isDone && !isFailed && !isExpanded ? 'hover:bg-slate-50' : ''}
+                              `}
+                            >
+                              <td className="py-2 px-3 text-slate-300 tabular-nums">{item.sortOrder + 1}</td>
+                              <td className="py-2 px-3 font-medium text-slate-700 max-w-[160px]">
+                                <div className="truncate">{item.title ?? item.productId.slice(0, 8)}</div>
                               </td>
-                            );
-                          })}
-                          <td className="py-1.5 px-3 text-slate-400">{item.processedAt ? fmtDate(item.processedAt) : '—'}</td>
-                          <td className="py-1.5 px-3">
-                            {(item.status === 'pending' || item.status === 'failed') ? (
-                              <button className="text-slate-300 hover:text-amber-500 transition text-sm" onClick={() => void skipItem(campaign.id, item.id)} title="Spring over">↷</button>
-                            ) : item.status === 'skipped' ? (
-                              <button className="text-slate-300 hover:text-indigo-500 transition text-sm" onClick={() => void resetItem(campaign.id, item.id)} title="Nulstil">↺</button>
-                            ) : null}
-                          </td>
-                        </tr>
-                      ))}
+                              <td className="py-2 px-3 font-mono text-slate-400 text-[11px]">{item.ean ?? '—'}</td>
+                              <td className="py-2 px-3">
+                                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[item.status] ?? 'bg-slate-100 text-slate-500'}`}>
+                                  {isProcessing && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-ping inline-block" />}
+                                  {STATUS_DK[item.status] ?? item.status}
+                                </span>
+                              </td>
+                              {campaign.fieldsJson.map((fid) => {
+                                const statusVal = item.fieldsDoneJson?.[fid];
+                                const textVal = item.fieldValuesJson?.[fid];
+                                return (
+                                  <td key={fid} className="py-2 px-3 max-w-[140px]">
+                                    {statusVal === 'done' && textVal ? (
+                                      <span className="text-slate-600 leading-snug line-clamp-2 text-[11px]">
+                                        {textVal.replace(/<[^>]+>/g, ' ').trim().slice(0, 80)}{textVal.length > 80 ? '…' : ''}
+                                      </span>
+                                    ) : statusVal === 'done' ? (
+                                      <span className="text-emerald-500">✓</span>
+                                    ) : statusVal === 'failed' ? (
+                                      <span className="text-red-400 font-bold">✗</span>
+                                    ) : statusVal === 'skipped' ? (
+                                      <span className="text-slate-300">–</span>
+                                    ) : (
+                                      <span className="text-slate-200">·</span>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                              <td className="py-2 px-3 text-slate-400">
+                                {item.syncedAt ? (
+                                  <span className="text-emerald-500 font-medium">✓ {fmtDate(item.syncedAt)}</span>
+                                ) : isDone ? (
+                                  <span className="text-slate-300 text-[11px]">Ikke synk.</span>
+                                ) : '—'}
+                              </td>
+                              <td className="py-2 px-3 text-slate-400 text-[11px]">{item.processedAt ? fmtDate(item.processedAt) : '—'}</td>
+                              <td className="py-2 px-3" onClick={(e) => e.stopPropagation()}>
+                                {(item.status === 'pending' || item.status === 'failed') ? (
+                                  <button className="text-slate-300 hover:text-amber-500 transition text-sm" onClick={() => void skipItem(campaign.id, item.id)} title="Spring over">↷</button>
+                                ) : item.status === 'skipped' ? (
+                                  <button className="text-slate-300 hover:text-indigo-500 transition text-sm" onClick={() => void resetItem(campaign.id, item.id)} title="Nulstil">↺</button>
+                                ) : null}
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr key={`${item.id}-exp`} className="bg-indigo-50 border-b border-indigo-100">
+                                <td colSpan={colSpan} className="px-6 py-4">
+                                  <div className="space-y-3">
+                                    {isFailed && item.errorMsg && (
+                                      <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-2.5 text-xs text-red-700">
+                                        <span className="font-semibold">Fejl:</span> {item.errorMsg}
+                                      </div>
+                                    )}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                      {campaign.fieldsJson.map((fid) => {
+                                        const fd = fieldDefs.find((f) => f.id === fid) ?? SYSTEM_FIELD_DEFS.find((f) => f.id === fid);
+                                        const statusVal = item.fieldsDoneJson?.[fid];
+                                        const textVal = item.fieldValuesJson?.[fid];
+                                        return (
+                                          <div key={fid} className="rounded-lg bg-white border border-slate-200 p-3">
+                                            <div className="flex items-center justify-between mb-2">
+                                              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{fd?.label ?? fid}</span>
+                                              <span className={`text-xs rounded-full px-1.5 py-0.5 font-medium ${statusVal === 'done' ? 'bg-emerald-100 text-emerald-600' : statusVal === 'failed' ? 'bg-red-100 text-red-600' : statusVal === 'skipped' ? 'bg-slate-100 text-slate-500' : 'bg-slate-50 text-slate-400'}`}>
+                                                {statusVal === 'done' ? 'Genereret' : statusVal === 'failed' ? 'Fejlet' : statusVal === 'skipped' ? 'Sprunget over' : 'Afventer'}
+                                              </span>
+                                            </div>
+                                            {textVal ? (
+                                              <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
+                                                {textVal.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}
+                                              </p>
+                                            ) : (
+                                              <p className="text-xs text-slate-300 italic">Ingen genereret værdi</p>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </>
+                        );
+                      })}
                       {items.length === 0 && (
                         <tr><td colSpan={10} className="py-8 text-center text-slate-300 text-xs">Ingen produkter endnu</td></tr>
                       )}

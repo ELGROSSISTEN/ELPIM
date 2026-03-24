@@ -10246,8 +10246,8 @@ app.get('/run-campaigns/:id/items', async (request: any, reply: any) => {
       skip: (page - 1) * pageSize,
       take: pageSize,
       select: {
-        id: true, productId: true, title: true, sku: true, status: true,
-        fieldsDoneJson: true, processedAt: true, errorMsg: true, sortOrder: true,
+        id: true, productId: true, title: true, sku: true, ean: true, status: true,
+        fieldsDoneJson: true, fieldValuesJson: true, syncedAt: true, processedAt: true, errorMsg: true, sortOrder: true,
       },
     }),
   ]);
@@ -10284,7 +10284,7 @@ app.post('/run-campaigns/:id/populate', async (request: any, reply: any) => {
     orderBy: [{ handle: 'asc' }],
     select: {
       id: true, title: true,
-      variants: { take: 1, select: { sku: true } },
+      variants: { take: 1, select: { sku: true, barcode: true } },
     },
     ...(limit > 0 ? { take: limit } : {}),
   });
@@ -10304,7 +10304,7 @@ app.post('/run-campaigns/:id/populate', async (request: any, reply: any) => {
     orderBy: [{ handle: 'asc' }],
     select: {
       id: true, title: true,
-      variants: { take: 1, select: { sku: true } },
+      variants: { take: 1, select: { sku: true, barcode: true } },
     },
     ...(limit > 0 && remainingLimit > 0 ? { take: remainingLimit } : {}),
   }) : [];
@@ -10321,6 +10321,7 @@ app.post('/run-campaigns/:id/populate', async (request: any, reply: any) => {
         productId: p.id,
         title: p.title,
         sku: p.variants?.[0]?.sku ?? null,
+        ean: p.variants?.[0]?.barcode ?? null,
         sortOrder: i,
       },
     }),

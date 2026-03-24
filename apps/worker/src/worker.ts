@@ -2693,6 +2693,8 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
 
     let processedTotal = 0;
     let failedTotal = 0;
+    let campaignTokensInput = 0;
+    let campaignTokensOutput = 0;
 
     // Process in batches of batchSize
     const ITEM_BATCH = campaign.batchSize as number;
@@ -2715,9 +2717,10 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
         const totalDone = await (prisma as any).runCampaignItem.count({ where: { campaignId, status: 'done' } });
         const totalFailed = await (prisma as any).runCampaignItem.count({ where: { campaignId, status: 'failed' } });
         const totalSkipped = await (prisma as any).runCampaignItem.count({ where: { campaignId, status: 'skipped' } });
+        const finalCostUsd = (campaignTokensInput * OPENAI_INPUT_USD_PER_1K / 1000) + (campaignTokensOutput * OPENAI_OUTPUT_USD_PER_1K / 1000);
         await (prisma as any).runCampaign.update({
           where: { id: campaignId },
-          data: { status: 'done', completedAt: new Date(), doneItems: totalDone, failedItems: totalFailed, skippedItems: totalSkipped },
+          data: { status: 'done', completedAt: new Date(), doneItems: totalDone, failedItems: totalFailed, skippedItems: totalSkipped, tokensUsed: campaignTokensInput + campaignTokensOutput, costUsd: finalCostUsd },
         });
         await logCampaign(campaignId, 'success', `Kørsel færdig! ${totalDone} behandlet, ${totalFailed} fejlet, ${totalSkipped} sprunget over.`);
         break;
@@ -2859,6 +2862,8 @@ ${productLines}`;
         let batchResults: string[] | null = null;
         try {
           const aiResult = await callOpenAi(openAiApiKey, batchPrompt, { webSearchEnabled: false });
+          campaignTokensInput += aiResult.usage.promptTokens;
+          campaignTokensOutput += aiResult.usage.completionTokens;
           const raw = aiResult.text.trim();
           const jsonMatch = raw.match(/\[[\s\S]*\]/);
           if (jsonMatch) {
@@ -2889,6 +2894,8 @@ ${productLines}`;
               const rendered = renderPrompt(promptTemplate, variables ?? {});
               const finalPrompt = `${masterPrompt}${shopIntroContext}\n\n${rendered}${supplierContext}${sourcesOnlyInstruction}`;
               const res = await callOpenAi(openAiApiKey, finalPrompt, { webSearchEnabled: false });
+              campaignTokensInput += res.usage.promptTokens;
+              campaignTokensOutput += res.usage.completionTokens;
               suggested = res.text;
             } catch (err) {
               await logCampaign(campaignId, 'error', `Fejl ved ${product!.title} (${fd.label}): ${err instanceof Error ? err.message : String(err)}`, undefined, item.id);
@@ -2914,7 +2921,9 @@ ${productLines}`;
 
           const fieldsDone = (item.fieldsDoneJson ?? {}) as Record<string, string>;
           fieldsDone[fd.id] = 'done';
-          await (prisma as any).runCampaignItem.update({ where: { id: item.id }, data: { fieldsDoneJson: fieldsDone } });
+          const fieldValues = (item.fieldValuesJson ?? {}) as Record<string, string>;
+          fieldValues[fd.id] = suggested;
+          await (prisma as any).runCampaignItem.update({ where: { id: item.id }, data: { fieldsDoneJson: fieldsDone, fieldValuesJson: fieldValues } });
         }
       }
 
@@ -2934,7 +2943,8 @@ ${productLines}`;
         (prisma as any).runCampaignItem.count({ where: { campaignId, status: 'failed' } }),
         (prisma as any).runCampaignItem.count({ where: { campaignId, status: 'skipped' } }),
       ]);
-      await (prisma as any).runCampaign.update({ where: { id: campaignId }, data: { doneItems: nowDone, failedItems: nowFailed, skippedItems: nowSkipped } });
+      const runningCostUsd = (campaignTokensInput * OPENAI_INPUT_USD_PER_1K / 1000) + (campaignTokensOutput * OPENAI_OUTPUT_USD_PER_1K / 1000);
+      await (prisma as any).runCampaign.update({ where: { id: campaignId }, data: { doneItems: nowDone, failedItems: nowFailed, skippedItems: nowSkipped, tokensUsed: campaignTokensInput + campaignTokensOutput, costUsd: runningCostUsd } });
       await logCampaign(campaignId, 'success', `Batch færdig: ${processedTotal} behandlet i alt, ${failedTotal} fejlet.`);
     }
 
