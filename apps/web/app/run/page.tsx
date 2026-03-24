@@ -6,6 +6,7 @@ import { apiFetch } from '../../lib/api';
 // ── Types ──────────────────────────────────────────────────────────────────
 
 type FieldDef = { id: string; label: string; type: string };
+type Source = { id: string; name: string; active: boolean };
 
 type Campaign = {
   id: string; name: string; status: string;
@@ -38,8 +39,8 @@ const SYSTEM_FIELD_DEFS: FieldDef[] = [
 
 const SCOPES = [
   {
-    value: 100,
-    label: '100 produkter',
+    value: 10,
+    label: '10 produkter',
     tag: 'Kvalitetstest',
     description: 'Tjek at AI-outputtet er godt nok',
     color: 'border-sky-200 bg-sky-50 text-sky-700',
@@ -47,10 +48,10 @@ const SCOPES = [
     tagColor: 'bg-sky-100 text-sky-600',
   },
   {
-    value: 1000,
-    label: '1.000 produkter',
+    value: 100,
+    label: '100 produkter',
     tag: 'Prisestimering',
-    description: 'Gang udgiften med 134 = fuld pris',
+    description: 'Gang udgiften med 1.340 = fuld pris',
     color: 'border-violet-200 bg-violet-50 text-violet-700',
     activeColor: 'border-violet-500 bg-violet-100 ring-2 ring-violet-300',
     tagColor: 'bg-violet-100 text-violet-600',
@@ -116,13 +117,16 @@ export default function RunPage() {
   const [itemsPage, setItemsPage] = useState(1);
   const [itemsStatus, setItemsStatus] = useState('all');
   const [fieldDefs, setFieldDefs] = useState<FieldDef[]>([]);
+  const [sources, setSources] = useState<Source[]>([]);
 
   // Create form
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newFields, setNewFields] = useState<string[]>([]);
-  const [newScope, setNewScope] = useState<number>(100);
+  const [newScope, setNewScope] = useState<number>(10);
   const [newOverwrite, setNewOverwrite] = useState<string[]>([]);
+  const [newSourceIds, setNewSourceIds] = useState<string[]>([]);
+  const [newSourcesOnly, setNewSourcesOnly] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [newBatchSize, setNewBatchSize] = useState(50);
   const [newConcurrency, setNewConcurrency] = useState(5);
@@ -133,7 +137,7 @@ export default function RunPage() {
   const [loading, setLoading] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { void loadCampaigns(); void loadFieldDefs(); }, []);
+  useEffect(() => { void loadCampaigns(); void loadFieldDefs(); void loadSources(); }, []);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -161,6 +165,13 @@ export default function RunPage() {
     try {
       const res = await apiFetch<{ fields: FieldDef[] }>('/fields');
       setFieldDefs(res.fields ?? []);
+    } catch { /* ignore */ }
+  };
+
+  const loadSources = async (): Promise<void> => {
+    try {
+      const res = await apiFetch<{ sources: Source[] }>('/sources');
+      setSources((res.sources ?? []).filter((s) => s.active));
     } catch { /* ignore */ }
   };
 
@@ -205,6 +216,8 @@ export default function RunPage() {
           collectionsFirst: newCollectionsFirst,
           excludeSkusJson: excludeSkus,
           overwriteJson: newOverwrite,
+          sourceIdsJson: newSourceIds,
+          sourcesOnly: newSourcesOnly,
         }),
       });
       const campaign = res.campaign;
@@ -217,7 +230,7 @@ export default function RunPage() {
       setStatusMsg(`Klar: ${popRes.total.toLocaleString('da-DK')} produkter indlæst`);
 
       setShowCreate(false);
-      setNewName(''); setNewFields([]); setNewOverwrite([]); setNewScope(100);
+      setNewName(''); setNewFields([]); setNewOverwrite([]); setNewScope(10); setNewSourceIds([]); setNewSourcesOnly(false);
       await loadCampaigns();
       setSelectedId(campaign.id);
     } catch (err) {
@@ -472,10 +485,57 @@ export default function RunPage() {
               )}
             </div>
 
-            {/* Step 3: Name */}
+            {/* Step 3: Sources */}
+            <div>
+              <p className="text-sm font-semibold text-slate-700 mb-1">
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold mr-2">3</span>
+                Datakilder <span className="text-slate-400 font-normal">(valgfrit — tom = alle aktive)</span>
+              </p>
+              <p className="text-xs text-slate-400 mb-3 pl-7">Samme kilder som ved individuelle kørsler. Vælg specifikke for at begrænse til dem.</p>
+              {sources.length === 0 ? (
+                <p className="text-xs text-slate-400 p-3 bg-slate-50 rounded-lg">Ingen aktive datakilder fundet.</p>
+              ) : (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {sources.map((src) => {
+                      const checked = newSourceIds.includes(src.id);
+                      return (
+                        <label
+                          key={src.id}
+                          className={`rounded-lg border-2 px-3 py-2 cursor-pointer select-none transition-all flex items-center gap-2 ${checked ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="shrink-0 accent-indigo-600"
+                            checked={checked}
+                            onChange={(e) => setNewSourceIds((prev) => e.target.checked ? [...prev, src.id] : prev.filter((x) => x !== src.id))}
+                          />
+                          <span className="text-sm font-medium text-slate-700 truncate">{src.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {newSourceIds.length > 0 && (
+                    <label className="flex items-center gap-2 text-sm cursor-pointer pl-1">
+                      <input
+                        type="checkbox"
+                        className="accent-amber-500"
+                        checked={newSourcesOnly}
+                        onChange={(e) => setNewSourcesOnly(e.target.checked)}
+                      />
+                      <span className={newSourcesOnly ? 'text-amber-600 font-medium' : 'text-slate-600'}>
+                        Brug udelukkende kildedata (ingen udefrakommende viden fra AI)
+                      </span>
+                    </label>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Step 4: Name */}
             <div>
               <p className="text-sm font-semibold text-slate-700 mb-3">
-                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold mr-2">3</span>
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold mr-2">4</span>
                 Giv kørslen et navn <span className="text-slate-400 font-normal">(valgfrit)</span>
               </p>
               <input

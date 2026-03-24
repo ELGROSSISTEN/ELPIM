@@ -2679,6 +2679,18 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
       promptsByField[fd.id] = pt?.body ?? (fd as any).defaultPrompt ?? `Generer ${fd.label} for produktet baseret på titel, type og leverandør.`;
     }
 
+    // Load active sources (same logic as individual AI worker)
+    const selectedSourceIds: string[] = (campaign.sourceIdsJson as string[]) ?? [];
+    const sourcesOnly: boolean = (campaign as any).sourcesOnly ?? false;
+    const activeSources = await prisma.source.findMany({
+      where: {
+        shopId: campaign.shopId,
+        active: true,
+        ...(selectedSourceIds.length > 0 ? { id: { in: selectedSourceIds } } : {}),
+      },
+      select: { id: true, name: true, tagsJson: true, url: true },
+    });
+
     let processedTotal = 0;
     let failedTotal = 0;
 
@@ -2700,7 +2712,6 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
       });
 
       if (pendingItems.length === 0) {
-        // All done
         const totalDone = await (prisma as any).runCampaignItem.count({ where: { campaignId, status: 'done' } });
         const totalFailed = await (prisma as any).runCampaignItem.count({ where: { campaignId, status: 'failed' } });
         const totalSkipped = await (prisma as any).runCampaignItem.count({ where: { campaignId, status: 'skipped' } });
@@ -2712,73 +2723,135 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
         break;
       }
 
-      // Mark batch as processing
       const batchIds = pendingItems.map((i: any) => i.id);
       await (prisma as any).runCampaignItem.updateMany({ where: { id: { in: batchIds } }, data: { status: 'processing' } });
-
       await logCampaign(campaignId, 'info', `Behandler batch på ${pendingItems.length} produkter...`);
 
-      // Process each field for the whole batch using existing batch AI logic
+      // Enrich all products in this batch with full data + source rows (same as individual AI worker)
+      const enriched = await Promise.all(pendingItems.map(async (item: any) => {
+        const product = await prisma.product.findFirst({
+          where: { id: item.productId },
+          include: { variants: true },
+        });
+        if (!product) return { item, product: null, variables: null, allSourceRows: [] as ReturnType<typeof findSupplierRowsForProduct> };
+
+        // Collections
+        let collectionsValue = '';
+        try {
+          const pcs = await prisma.productCollection.findMany({
+            where: { productId: product.id },
+            include: { collection: { select: { title: true } } },
+            take: 20,
+          });
+          collectionsValue = pcs.map((pc) => pc.collection.title).filter(Boolean).join(', ');
+        } catch { /* ignore */ }
+
+        const v = product.variants?.[0] ?? null;
+        const variables: Record<string, string> = {
+          title: product.title ?? '',
+          handle: product.handle ?? '',
+          vendor: product.vendor ?? '',
+          productType: product.productType ?? '',
+          status: product.status ?? '',
+          descriptionHtml: product.descriptionHtml ?? '',
+          sku: v?.sku ?? '',
+          barcode: (v as any)?.barcode ?? '',
+          price: (v as any)?.price ?? '',
+          compareAtPrice: (v as any)?.compareAtPrice ?? '',
+          weight: (v as any)?.weight != null ? String((v as any).weight) : '',
+          weightUnit: (v as any)?.weightUnit ?? '',
+          collections: collectionsValue,
+        };
+
+        // Source rows — identical to individual AI worker
+        const supplierRows = findSupplierRowsForProduct(activeSources, { id: product.id, title: product.title, handle: product.handle, vendor: product.vendor, variants: product.variants });
+        const crawledRows = await findCrawledSourceRows(activeSources, product.id);
+        const liveLookupRows = await fetchLiveLookupRows(activeSources, variables);
+        const allSourceRows = [...supplierRows, ...crawledRows, ...liveLookupRows];
+
+        return { item, product, variables, allSourceRows };
+      }));
+
+      // Process each field for the whole batch
       for (const fd of fieldDefs) {
         await checkDailyAiSpendCap(campaign.shopId);
 
         const outputIsHtml = fd.type === 'html';
         const promptTemplate = promptsByField[fd.id] ?? `Generer ${fd.label}.`;
 
-        // Build batch prompt (reuse same pattern as aiWorker)
-        const products = await Promise.all(
-          pendingItems.map((item: any) =>
-            prisma.product.findFirst({
-              where: { id: item.productId },
-              include: { variants: { take: 1 } },
-            }),
-          ),
-        );
-
-        // For products where this field already has a value and overwrite is false — skip
-        const toProcess: Array<{ item: any; product: any; index: number }> = [];
-        for (let i = 0; i < pendingItems.length; i++) {
-          const item = pendingItems[i];
-          const product = products[i];
-          if (!product) continue;
+        // Skip products that already have a value (unless overwrite)
+        const toProcess: Array<typeof enriched[0] & { batchIndex: number }> = [];
+        for (let i = 0; i < enriched.length; i++) {
+          const e = enriched[i]!;
+          if (!e.product) continue;
           if (!overwrite.includes(fd.id)) {
             let hasExisting = false;
             if (fd.id.startsWith('__')) {
-              hasExisting = !!getSystemFieldCurrentValue(product, fd.id);
+              hasExisting = !!getSystemFieldCurrentValue(e.product, fd.id);
             } else {
               const existing = await prisma.fieldValue.findUnique({
-                where: { ownerType_ownerId_fieldDefinitionId: { ownerType: 'product', ownerId: product.id, fieldDefinitionId: fd.id } },
+                where: { ownerType_ownerId_fieldDefinitionId: { ownerType: 'product', ownerId: e.product.id, fieldDefinitionId: fd.id } },
                 select: { valueJson: true },
               });
               hasExisting = !!(existing?.valueJson && existing.valueJson !== '' && existing.valueJson !== null);
             }
             if (hasExisting) {
-              const fieldsDone = (item.fieldsDoneJson ?? {}) as Record<string, string>;
+              const fieldsDone = (e.item.fieldsDoneJson ?? {}) as Record<string, string>;
               fieldsDone[fd.id] = 'skipped';
-              await (prisma as any).runCampaignItem.update({ where: { id: item.id }, data: { fieldsDoneJson: fieldsDone } });
+              await (prisma as any).runCampaignItem.update({ where: { id: e.item.id }, data: { fieldsDoneJson: fieldsDone } });
               continue;
             }
           }
-          toProcess.push({ item, product, index: i });
+          toProcess.push({ ...e, batchIndex: i });
         }
 
         if (toProcess.length === 0) continue;
 
-        const productLines = toProcess.map(({ product }, i) => {
-          const v = product.variants?.[0];
-          return `Product ${i + 1}:\n  title: ${product.title}\n  vendor: ${product.vendor ?? ''}\n  productType: ${product.productType ?? ''}\n  sku: ${v?.sku ?? ''}\n  price: ${v?.price ?? ''}`;
-        }).join('\n\n');
+        // Build rich per-product sections — same context as individual AI worker
+        const sourcesOnlyInstruction = sourcesOnly && toProcess.some((e) => e.allSourceRows.length > 0)
+          ? '\n\nVIGTIGT — BRUG UDELUKKENDE KILDEDATA: Du må KUN bruge information fra kildedataene herunder. Tilføj ikke viden, antagelser eller formuleringsvalg der ikke direkte kan udledes af kildedata. Mangler der data til et felt, så skriv det eksplicit frem for at opfinde det.'
+          : '';
+        const noHtmlInstruction = outputIsHtml ? '' : '\n- Ren tekst uden HTML-tags.';
 
-        const batchPrompt = `${masterPrompt}${aiIntroduction.trim() ? `\n\nWEBSHOPPEN:\n${aiIntroduction.trim()}` : ''}
+        const productLines = toProcess.map(({ product, variables, allSourceRows }, i) => {
+          const v = product!.variants?.[0];
+          const lines = [
+            `Produkt ${i + 1}:`,
+            `  titel: ${variables!.title}`,
+            variables!.vendor ? `  leverandør: ${variables!.vendor}` : '',
+            variables!.productType ? `  produkttype: ${variables!.productType}` : '',
+            variables!.collections ? `  kollektioner: ${variables!.collections}` : '',
+            v ? `  sku: ${(v as any).sku ?? ''}` : '',
+            v ? `  pris: ${(v as any).price ?? ''}` : '',
+            variables!.descriptionHtml ? `  beskrivelse: ${variables!.descriptionHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)}` : '',
+          ].filter(Boolean).join('\n');
+
+          const sourceSection = allSourceRows.length > 0
+            ? '\n' + allSourceRows.map(({ sourceName, rowData }) => {
+                const dataLines = Object.entries(rowData)
+                  .filter(([, v]) => String(v).trim())
+                  .map(([k, v]) => `    ${k}: ${v}`)
+                  .join('\n');
+                return `  KILDEDATA fra "${sourceName}":\n${dataLines}`;
+              }).join('\n')
+            : '';
+
+          return lines + sourceSection;
+        }).join('\n\n---\n\n');
+
+        const shopIntroContext = aiIntroduction.trim() ? `\n\nWEBSHOPPEN:\n${aiIntroduction.trim()}` : '';
+        const renderedInstruction = renderPrompt(promptTemplate, toProcess[0]?.variables ?? {});
+
+        const batchPrompt = `${masterPrompt}${shopIntroContext}
 
 Du skal generere feltværdien "${fd.label}" for hvert af de ${toProcess.length} produkter herunder.
 
-Instruktion: ${promptTemplate}
+Instruktion: ${renderedInstruction}
 
 Regler for output:
 - Returnér PRÆCIST et JSON-array med ${toProcess.length} strings — én per produkt i samme rækkefølge.
-- Eksempel format: ["værdi for produkt 1", "værdi for produkt 2", ...]
-- Ingen forklaringer, ingen nøgler, kun arrayet.${outputIsHtml ? '' : '\n- Ren tekst uden HTML.'}
+- Format: ["værdi for produkt 1", "værdi for produkt 2", ...]
+- Ingen forklaringer, ingen nøgler, kun arrayet.${noHtmlInstruction}${sourcesOnlyInstruction}
 
 PRODUKTER:
 ${productLines}`;
@@ -2795,23 +2868,30 @@ ${productLines}`;
             }
           }
         } catch (err) {
-          await logCampaign(campaignId, 'warn', `Batch AI-kald fejlede for felt "${fd.label}" — falder tilbage til individuelle kald. Fejl: ${err instanceof Error ? err.message : String(err)}`);
+          await logCampaign(campaignId, 'warn', `Batch AI-kald fejlede for "${fd.label}" — falder tilbage til individuelle kald. Fejl: ${err instanceof Error ? err.message : String(err)}`);
         }
 
         for (let i = 0; i < toProcess.length; i++) {
-          const { item, product } = toProcess[i]!;
+          const { item, product, variables, allSourceRows } = toProcess[i]!;
           let suggested: string;
+
           if (batchResults) {
             suggested = batchResults[i] ?? '';
           } else {
-            // Individual fallback
+            // Individual fallback — exactly like the individual AI worker
             try {
-              const vars = { title: product.title, handle: product.handle, vendor: product.vendor ?? '', productType: product.productType ?? '', descriptionHtml: product.descriptionHtml ?? '', sku: product.variants?.[0]?.sku ?? '', price: product.variants?.[0]?.price ?? '', collections: '' };
-              const rendered = renderPrompt(promptTemplate, vars);
-              const res = await callOpenAi(openAiApiKey, `${masterPrompt}\n\n${rendered}`, { webSearchEnabled: false });
+              const supplierContext = allSourceRows.length > 0
+                ? allSourceRows.map(({ sourceName, rowData }) => {
+                    const dataLines = Object.entries(rowData).filter(([, v]) => String(v).trim()).map(([k, v]) => `  ${k}: ${v}`).join('\n');
+                    return `\n\nKILDEDATA fra "${sourceName}":\n[${sourceName}]\n${dataLines}`;
+                  }).join('')
+                : '';
+              const rendered = renderPrompt(promptTemplate, variables ?? {});
+              const finalPrompt = `${masterPrompt}${shopIntroContext}\n\n${rendered}${supplierContext}${sourcesOnlyInstruction}`;
+              const res = await callOpenAi(openAiApiKey, finalPrompt, { webSearchEnabled: false });
               suggested = res.text;
             } catch (err) {
-              await logCampaign(campaignId, 'error', `Fejl ved ${product.title} (${fd.label}): ${err instanceof Error ? err.message : String(err)}`, undefined, item.id);
+              await logCampaign(campaignId, 'error', `Fejl ved ${product!.title} (${fd.label}): ${err instanceof Error ? err.message : String(err)}`, undefined, item.id);
               const fieldsDone = (item.fieldsDoneJson ?? {}) as Record<string, string>;
               fieldsDone[fd.id] = 'failed';
               await (prisma as any).runCampaignItem.update({ where: { id: item.id }, data: { fieldsDoneJson: fieldsDone } });
@@ -2822,15 +2902,15 @@ ${productLines}`;
           if (outputIsHtml) suggested = stripMarkdownCodeFences(suggested);
 
           if (fd.id.startsWith('__')) {
-            await writeSystemField(product.id, fd.id, suggested);
+            await writeSystemField(product!.id, fd.id, suggested);
           } else {
             await prisma.fieldValue.upsert({
-              where: { ownerType_ownerId_fieldDefinitionId: { ownerType: 'product', ownerId: product.id, fieldDefinitionId: fd.id } },
+              where: { ownerType_ownerId_fieldDefinitionId: { ownerType: 'product', ownerId: product!.id, fieldDefinitionId: fd.id } },
               update: { valueJson: suggested, source: 'ai' },
-              create: { ownerType: 'product', ownerId: product.id, productId: product.id, fieldDefinitionId: fd.id, valueJson: suggested, source: 'ai' },
+              create: { ownerType: 'product', ownerId: product!.id, productId: product!.id, fieldDefinitionId: fd.id, valueJson: suggested, source: 'ai' },
             });
           }
-          await prisma.product.update({ where: { id: product.id }, data: { updatedAt: new Date() } });
+          await prisma.product.update({ where: { id: product!.id }, data: { updatedAt: new Date() } });
 
           const fieldsDone = (item.fieldsDoneJson ?? {}) as Record<string, string>;
           fieldsDone[fd.id] = 'done';
@@ -2838,32 +2918,23 @@ ${productLines}`;
         }
       }
 
-      // Mark all batch items as done (or failed if any field failed)
-      for (const item of pendingItems) {
+      // Mark all batch items as done/failed
+      for (const { item } of enriched) {
         const refreshed = await (prisma as any).runCampaignItem.findUnique({ where: { id: item.id }, select: { fieldsDoneJson: true } });
         const fieldsDone = (refreshed?.fieldsDoneJson ?? {}) as Record<string, string>;
         const allFieldKeys = fieldDefs.map((f: any) => f.id);
         const hasFailure = allFieldKeys.some((k: string) => fieldsDone[k] === 'failed');
         const finalStatus = hasFailure ? 'failed' : 'done';
-        await (prisma as any).runCampaignItem.update({
-          where: { id: item.id },
-          data: { status: finalStatus, processedAt: new Date() },
-        });
-        if (finalStatus === 'done') processedTotal++;
-        else failedTotal++;
+        await (prisma as any).runCampaignItem.update({ where: { id: item.id }, data: { status: finalStatus, processedAt: new Date() } });
+        if (finalStatus === 'done') processedTotal++; else failedTotal++;
       }
 
-      // Update campaign counters
       const [nowDone, nowFailed, nowSkipped] = await Promise.all([
         (prisma as any).runCampaignItem.count({ where: { campaignId, status: 'done' } }),
         (prisma as any).runCampaignItem.count({ where: { campaignId, status: 'failed' } }),
         (prisma as any).runCampaignItem.count({ where: { campaignId, status: 'skipped' } }),
       ]);
-      await (prisma as any).runCampaign.update({
-        where: { id: campaignId },
-        data: { doneItems: nowDone, failedItems: nowFailed, skippedItems: nowSkipped },
-      });
-
+      await (prisma as any).runCampaign.update({ where: { id: campaignId }, data: { doneItems: nowDone, failedItems: nowFailed, skippedItems: nowSkipped } });
       await logCampaign(campaignId, 'success', `Batch færdig: ${processedTotal} behandlet i alt, ${failedTotal} fejlet.`);
     }
 

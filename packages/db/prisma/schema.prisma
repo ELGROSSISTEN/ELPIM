@@ -875,6 +875,8 @@ model RunCampaign {
   collectionsFirst Boolean  @default(true)
   excludeSkusJson  Json     @default("[]") // string[]
   overwriteJson    Json     @default("[]") // string[] — fieldDefIds where we overwrite existing values
+  sourceIdsJson    Json     @default("[]") // string[] — source IDs to include (empty = all active)
+  sourcesOnly      Boolean  @default(false)
   totalItems       Int      @default(0)
   doneItems        Int      @default(0)
   failedItems      Int      @default(0)

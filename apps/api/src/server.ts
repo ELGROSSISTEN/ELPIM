@@ -4568,7 +4568,7 @@ app.get('/sources', async (request: any, reply: any) => {
   if (!user) {
     return reply.code(401).send({ error: 'Session invalid. Please log in again.' });
   }
-  const shopId = resolveActiveShopId(request, user);
+  const shopId = await resolveShopIdForPlatformAdmin(request, user);
   if (!shopId) {
     return reply.code(400).send({ error: 'Connect a shop first' });
   }
@@ -10168,6 +10168,8 @@ app.post('/run-campaigns', async (request: any, reply: any) => {
     collectionsFirst?: boolean;
     excludeSkusJson?: string[];
     overwriteJson?: string[];
+    sourceIdsJson?: string[];
+    sourcesOnly?: boolean;
   };
 
   if (!body.name?.trim()) return reply.code(400).send({ error: 'name er påkrævet' });
@@ -10183,6 +10185,8 @@ app.post('/run-campaigns', async (request: any, reply: any) => {
       collectionsFirst: body.collectionsFirst ?? true,
       excludeSkusJson: body.excludeSkusJson ?? [],
       overwriteJson: body.overwriteJson ?? [],
+      sourceIdsJson: body.sourceIdsJson ?? [],
+      sourcesOnly: body.sourcesOnly ?? false,
     },
   });
   return reply.code(201).send({ campaign });
