@@ -2669,13 +2669,21 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
     const openAiApiKey = decryptSecret(encryptedPlatformKey, env.MASTER_ENCRYPTION_KEY);
 
     // Load prompt templates for each field — use per-field selection from promptsJson, fall back to default
+    // NOTE: System fields (__description, etc.) do NOT use the shop's default template unless explicitly chosen,
+    //       because the default template is designed for custom fields and has no HTML/format instructions.
+    //       They fall back to fd.defaultPrompt which already has the correct output format specified.
     const selectedPrompts: Record<string, string> = ((campaign as any).promptsJson as Record<string, string>) ?? {};
     const promptsByField: Record<string, string> = {};
     for (const fd of fieldDefs) {
       const selectedId = selectedPrompts[fd.id];
-      const pt = selectedId
-        ? await prisma.promptTemplate.findFirst({ where: { id: selectedId, shopId: campaign.shopId }, select: { body: true } })
-        : await prisma.promptTemplate.findFirst({ where: { shopId: campaign.shopId, isDefault: true }, orderBy: { createdAt: 'desc' }, select: { body: true } });
+      let pt: { body: string } | null = null;
+      if (selectedId) {
+        pt = await prisma.promptTemplate.findFirst({ where: { id: selectedId, shopId: campaign.shopId }, select: { body: true } });
+      } else if (!fd.id.startsWith('__')) {
+        // Custom fields: use shop's default template as fallback
+        pt = await prisma.promptTemplate.findFirst({ where: { shopId: campaign.shopId, isDefault: true }, orderBy: { createdAt: 'desc' }, select: { body: true } });
+      }
+      // System fields without explicit selection fall through to fd.defaultPrompt below
       promptsByField[fd.id] = pt?.body ?? (fd as any).defaultPrompt ?? `Generer ${fd.label} for produktet baseret på titel, type og leverandør.`;
     }
 
@@ -2872,7 +2880,9 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
         const sourcesOnlyInstruction = sourcesOnly && toProcess.some((e) => e.allSourceRows.length > 0)
           ? '\n\nVIGTIGT — BRUG UDELUKKENDE KILDEDATA: Du må KUN bruge information fra kildedataene herunder. Tilføj ikke viden, antagelser eller formuleringsvalg der ikke direkte kan udledes af kildedata. Mangler der data til et felt, så skriv det eksplicit frem for at opfinde det.'
           : '';
-        const noHtmlInstruction = outputIsHtml ? '' : '\n- Ren tekst uden HTML-tags.';
+        const formatInstruction = outputIsHtml
+          ? '\n- Output skal være HTML med passende tags (<p>, <ul>, <li>, <strong> osv.). Indsæt gyldige HTML-strenge i JSON-arrayet.'
+          : '\n- Ren tekst uden HTML-tags eller markdown.';
 
         const productLines = toProcess.map(({ product, variables, allSourceRows }, i) => {
           const v = product!.variants?.[0];
@@ -2912,7 +2922,7 @@ Instruktion: ${renderedInstruction}
 Regler for output:
 - Returnér PRÆCIST et JSON-array med ${toProcess.length} strings — én per produkt i samme rækkefølge.
 - Format: ["værdi for produkt 1", "værdi for produkt 2", ...]
-- Ingen forklaringer, ingen nøgler, kun arrayet.${noHtmlInstruction}${sourcesOnlyInstruction}
+- Ingen forklaringer, ingen nøgler, kun arrayet.${formatInstruction}${sourcesOnlyInstruction}
 
 PRODUKTER:
 ${productLines}`;
@@ -2956,7 +2966,10 @@ ${productLines}`;
                   }).join('')
                 : '';
               const rendered = renderPrompt(promptTemplate, variables ?? {});
-              const finalPrompt = `${masterPrompt}${shopIntroContext}\n\n${rendered}${supplierContext}${sourcesOnlyInstruction}`;
+              const fallbackFormatInstruction = outputIsHtml
+                ? '\n\nVIGTIGT: Generer HTML med passende tags (<p>, <ul>, <li>, <strong> osv.).'
+                : '\n\nVIGTIGT: Returnér UDELUKKENDE ren tekst. Brug IKKE HTML-tags, markdown eller anden formatering.';
+              const finalPrompt = `${masterPrompt}${shopIntroContext}\n\n${rendered}${supplierContext}${sourcesOnlyInstruction}${fallbackFormatInstruction}`;
               const res = await callOpenAi(openAiApiKey, finalPrompt, { webSearchEnabled: false });
               campaignTokensInput += res.usage.promptTokens;
               campaignTokensOutput += res.usage.completionTokens;
