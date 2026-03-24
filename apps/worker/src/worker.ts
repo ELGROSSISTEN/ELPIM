@@ -2586,6 +2586,36 @@ type RunCampaignJobRef = { syncJobId: string };
 
 const runCampaignQueue = new Queue<RunCampaignJobRef>('run-campaign', { connection });
 
+// System fields that live on the Product record itself (not in FieldValue)
+const RC_SYSTEM_FIELDS = [
+  { id: '__title',           label: 'Titel',                    type: 'text', defaultPrompt: 'Generer en præcis og SEO-venlig produkttitel. Returnér kun titlen som ren tekst.' },
+  { id: '__description',     label: 'Beskrivelse',              type: 'html', defaultPrompt: 'Generer en overbevisende produktbeskrivelse som HTML (brug <p>, <ul>, <li> osv.).' },
+  { id: '__seo_title',       label: 'Meta titel (SEO)',         type: 'text', defaultPrompt: 'Generer en SEO meta-titel. Max 60 tegn. Returnér kun titlen som ren tekst.' },
+  { id: '__seo_description', label: 'Meta beskrivelse (SEO)',   type: 'text', defaultPrompt: 'Generer en SEO meta-beskrivelse. Max 160 tegn. Returnér kun beskrivelsen som ren tekst.' },
+] as const;
+
+function getSystemFieldCurrentValue(product: { title: string; descriptionHtml?: string | null; seoJson: unknown }, fieldId: string): string | null {
+  if (fieldId === '__title') return product.title || null;
+  if (fieldId === '__description') return product.descriptionHtml || null;
+  const seo = (product.seoJson as Record<string, string> | null) ?? {};
+  if (fieldId === '__seo_title') return seo.title || null;
+  if (fieldId === '__seo_description') return seo.description || null;
+  return null;
+}
+
+async function writeSystemField(productId: string, fieldId: string, value: string): Promise<void> {
+  if (fieldId === '__title') {
+    await prisma.product.update({ where: { id: productId }, data: { title: value } });
+  } else if (fieldId === '__description') {
+    await prisma.product.update({ where: { id: productId }, data: { descriptionHtml: value } });
+  } else if (fieldId === '__seo_title' || fieldId === '__seo_description') {
+    const prod = await prisma.product.findUnique({ where: { id: productId }, select: { seoJson: true } });
+    const seo = ((prod?.seoJson ?? {}) as Record<string, string>);
+    const updated = fieldId === '__seo_title' ? { ...seo, title: value } : { ...seo, description: value };
+    await prisma.product.update({ where: { id: productId }, data: { seoJson: updated } });
+  }
+}
+
 async function logCampaign(campaignId: string, level: string, message: string, metaJson?: Record<string, unknown>, itemId?: string): Promise<void> {
   try {
     await (prisma as any).runCampaignLog.create({ data: { campaignId, itemId: itemId ?? null, level, message, metaJson: metaJson ?? null } });
@@ -2609,11 +2639,15 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
     const fields: string[] = (campaign.fieldsJson as string[]) ?? [];
     const overwrite: string[] = (campaign.overwriteJson as string[]) ?? [];
 
-    // Load field definitions
-    const fieldDefs = await prisma.fieldDefinition.findMany({
-      where: { id: { in: fields }, shopId: campaign.shopId },
+    // Load field definitions (custom + system)
+    const customFieldIds = fields.filter((f: string) => !f.startsWith('__'));
+    const systemFieldIds = fields.filter((f: string) => f.startsWith('__'));
+    const customFieldDefs = await prisma.fieldDefinition.findMany({
+      where: { id: { in: customFieldIds }, shopId: campaign.shopId },
       select: { id: true, label: true, type: true },
     });
+    const systemFieldDefs = RC_SYSTEM_FIELDS.filter((sf) => systemFieldIds.includes(sf.id));
+    const fieldDefs: Array<{ id: string; label: string; type: string; defaultPrompt?: string }> = [...customFieldDefs, ...systemFieldDefs];
 
     // Load AI config
     const [aiIntroRow, masterPromptRow, platformKeyRow] = await Promise.all([
@@ -2642,7 +2676,7 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
         orderBy: { createdAt: 'desc' },
         select: { body: true },
       });
-      promptsByField[fd.id] = pt?.body ?? `Generer ${fd.label} for produktet baseret på titel, type og leverandør.`;
+      promptsByField[fd.id] = pt?.body ?? (fd as any).defaultPrompt ?? `Generer ${fd.label} for produktet baseret på titel, type og leverandør.`;
     }
 
     let processedTotal = 0;
@@ -2708,12 +2742,17 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
           const product = products[i];
           if (!product) continue;
           if (!overwrite.includes(fd.id)) {
-            const existing = await prisma.fieldValue.findUnique({
-              where: { ownerType_ownerId_fieldDefinitionId: { ownerType: 'product', ownerId: product.id, fieldDefinitionId: fd.id } },
-              select: { valueJson: true },
-            });
-            if (existing?.valueJson && existing.valueJson !== '' && existing.valueJson !== null) {
-              // Already has value, skip this field for this product
+            let hasExisting = false;
+            if (fd.id.startsWith('__')) {
+              hasExisting = !!getSystemFieldCurrentValue(product, fd.id);
+            } else {
+              const existing = await prisma.fieldValue.findUnique({
+                where: { ownerType_ownerId_fieldDefinitionId: { ownerType: 'product', ownerId: product.id, fieldDefinitionId: fd.id } },
+                select: { valueJson: true },
+              });
+              hasExisting = !!(existing?.valueJson && existing.valueJson !== '' && existing.valueJson !== null);
+            }
+            if (hasExisting) {
               const fieldsDone = (item.fieldsDoneJson ?? {}) as Record<string, string>;
               fieldsDone[fd.id] = 'skipped';
               await (prisma as any).runCampaignItem.update({ where: { id: item.id }, data: { fieldsDoneJson: fieldsDone } });
@@ -2782,11 +2821,15 @@ ${productLines}`;
 
           if (outputIsHtml) suggested = stripMarkdownCodeFences(suggested);
 
-          await prisma.fieldValue.upsert({
-            where: { ownerType_ownerId_fieldDefinitionId: { ownerType: 'product', ownerId: product.id, fieldDefinitionId: fd.id } },
-            update: { valueJson: suggested, source: 'ai' },
-            create: { ownerType: 'product', ownerId: product.id, productId: product.id, fieldDefinitionId: fd.id, valueJson: suggested, source: 'ai' },
-          });
+          if (fd.id.startsWith('__')) {
+            await writeSystemField(product.id, fd.id, suggested);
+          } else {
+            await prisma.fieldValue.upsert({
+              where: { ownerType_ownerId_fieldDefinitionId: { ownerType: 'product', ownerId: product.id, fieldDefinitionId: fd.id } },
+              update: { valueJson: suggested, source: 'ai' },
+              create: { ownerType: 'product', ownerId: product.id, productId: product.id, fieldDefinitionId: fd.id, valueJson: suggested, source: 'ai' },
+            });
+          }
           await prisma.product.update({ where: { id: product.id }, data: { updatedAt: new Date() } });
 
           const fieldsDone = (item.fieldsDoneJson ?? {}) as Record<string, string>;

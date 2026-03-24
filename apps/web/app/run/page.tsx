@@ -25,6 +25,15 @@ type LogEntry = {
   id: string; level: string; message: string; createdAt: string; itemId: string | null;
 };
 
+// ── System fields (live on Product record, not FieldValue) ─────────────────
+
+const SYSTEM_FIELD_DEFS: FieldDef[] = [
+  { id: '__title',           label: 'Titel',              type: 'text' },
+  { id: '__description',     label: 'Beskrivelse',        type: 'html' },
+  { id: '__seo_title',       label: 'Meta titel (SEO)',   type: 'text' },
+  { id: '__seo_description', label: 'Meta beskrivelse (SEO)', type: 'text' },
+];
+
 // ── Scope options ──────────────────────────────────────────────────────────
 
 const SCOPES = [
@@ -377,46 +386,89 @@ export default function RunPage() {
                 <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold mr-2">2</span>
                 Vælg felter der skal genereres
               </p>
-              {fieldDefs.length === 0 ? (
-                <p className="text-xs text-slate-400 p-3 bg-slate-50 rounded-lg">Ingen felter fundet. Opret felter under Opsætning → Felter.</p>
-              ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {fieldDefs.map((fd) => {
-                    const checked = newFields.includes(fd.id);
-                    return (
-                      <label
-                        key={fd.id}
-                        className={`rounded-lg border-2 px-3 py-2.5 cursor-pointer select-none transition-all ${checked ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
-                      >
-                        <div className="flex items-start gap-2">
+
+              {/* System fields */}
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Systemfelter</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+                {SYSTEM_FIELD_DEFS.map((fd) => {
+                  const checked = newFields.includes(fd.id);
+                  return (
+                    <label
+                      key={fd.id}
+                      className={`rounded-lg border-2 px-3 py-2.5 cursor-pointer select-none transition-all ${checked ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 shrink-0 accent-indigo-600"
+                          checked={checked}
+                          onChange={(e) => setNewFields((prev) => e.target.checked ? [...prev, fd.id] : prev.filter((x) => x !== fd.id))}
+                        />
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-slate-700 leading-tight">{fd.label}</div>
+                          <div className="text-xs text-slate-400">{fd.type}</div>
+                        </div>
+                      </div>
+                      {checked && (
+                        <label className="flex items-center gap-1.5 mt-2 pl-5 text-xs text-slate-500 cursor-pointer">
                           <input
                             type="checkbox"
-                            className="mt-0.5 shrink-0 accent-indigo-600"
-                            checked={checked}
-                            onChange={(e) => setNewFields((prev) => e.target.checked ? [...prev, fd.id] : prev.filter((x) => x !== fd.id))}
+                            className="accent-amber-500"
+                            checked={newOverwrite.includes(fd.id)}
+                            onChange={(e) => setNewOverwrite((prev) => e.target.checked ? [...prev, fd.id] : prev.filter((x) => x !== fd.id))}
                           />
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium text-slate-700 leading-tight">{fd.label}</div>
-                            <div className="text-xs text-slate-400">{fd.type}</div>
-                          </div>
-                        </div>
-                        {checked && (
-                          <label className="flex items-center gap-1.5 mt-2 pl-5 text-xs text-slate-500 cursor-pointer">
+                          <span className={newOverwrite.includes(fd.id) ? 'text-amber-600 font-medium' : ''}>
+                            Overskriv eksisterende
+                          </span>
+                        </label>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+
+              {/* Custom fields */}
+              {fieldDefs.length > 0 && (
+                <>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Brugerdefinerede felter</p>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    {fieldDefs.map((fd) => {
+                      const checked = newFields.includes(fd.id);
+                      return (
+                        <label
+                          key={fd.id}
+                          className={`rounded-lg border-2 px-3 py-2.5 cursor-pointer select-none transition-all ${checked ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
+                        >
+                          <div className="flex items-start gap-2">
                             <input
                               type="checkbox"
-                              className="accent-amber-500"
-                              checked={newOverwrite.includes(fd.id)}
-                              onChange={(e) => setNewOverwrite((prev) => e.target.checked ? [...prev, fd.id] : prev.filter((x) => x !== fd.id))}
+                              className="mt-0.5 shrink-0 accent-indigo-600"
+                              checked={checked}
+                              onChange={(e) => setNewFields((prev) => e.target.checked ? [...prev, fd.id] : prev.filter((x) => x !== fd.id))}
                             />
-                            <span className={newOverwrite.includes(fd.id) ? 'text-amber-600 font-medium' : ''}>
-                              Overskriv eksisterende indhold
-                            </span>
-                          </label>
-                        )}
-                      </label>
-                    );
-                  })}
-                </div>
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium text-slate-700 leading-tight">{fd.label}</div>
+                              <div className="text-xs text-slate-400">{fd.type}</div>
+                            </div>
+                          </div>
+                          {checked && (
+                            <label className="flex items-center gap-1.5 mt-2 pl-5 text-xs text-slate-500 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                className="accent-amber-500"
+                                checked={newOverwrite.includes(fd.id)}
+                                onChange={(e) => setNewOverwrite((prev) => e.target.checked ? [...prev, fd.id] : prev.filter((x) => x !== fd.id))}
+                              />
+                              <span className={newOverwrite.includes(fd.id) ? 'text-amber-600 font-medium' : ''}>
+                                Overskriv eksisterende
+                              </span>
+                            </label>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </div>
 
@@ -617,7 +669,7 @@ export default function RunPage() {
                         <th className="py-2 px-3 font-medium">SKU</th>
                         <th className="py-2 px-3 font-medium">Status</th>
                         {campaign.fieldsJson.map((fid) => {
-                          const fd = fieldDefs.find((f) => f.id === fid);
+                          const fd = fieldDefs.find((f) => f.id === fid) ?? SYSTEM_FIELD_DEFS.find((f) => f.id === fid);
                           return <th key={fid} className="py-2 px-3 font-medium">{fd?.label ?? fid.slice(0, 8)}</th>;
                         })}
                         <th className="py-2 px-3 font-medium">Behandlet</th>
