@@ -2901,14 +2901,22 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
             variables!.descriptionHtml ? `  beskrivelse: ${variables!.descriptionHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500)}` : '',
           ].filter(Boolean).join('\n');
 
+          // Use identical format to individual AI worker supplierContext so the AI treats source data
+          // as factual background — not as things to directly generate FAQ/content questions about
           const sourceSection = allSourceRows.length > 0
-            ? '\n' + allSourceRows.map(({ sourceName, rowData }: { sourceName: string; rowData: Record<string, unknown> }) => {
+            ? allSourceRows.map(({ sourceName, promptTemplate: srcPt, rowData }: { sourceName: string; promptTemplate?: string; rowData: Record<string, unknown> }) => {
                 const dataLines = Object.entries(rowData)
                   .filter(([, v]) => String(v).trim())
-                  .map(([k, v]) => `    ${k}: ${v}`)
+                  .map(([k, v]) => `  ${k}: ${v}`)
                   .join('\n');
-                return `  KILDEDATA fra "${sourceName}":\n${dataLines}`;
-              }).join('\n')
+                const sourceData = `[${sourceName}]\n${dataLines}`;
+                if (srcPt) {
+                  return '\n  ' + srcPt
+                    .replace(/\{\{\s*source_name\s*\}\}/g, sourceName)
+                    .replace(/\{\{\s*source_data\s*\}\}/g, sourceData);
+                }
+                return `\n  KILDEDATA fra "${sourceName}" (brug som faktabasis — reformulér med egne ord):\n${dataLines}`;
+              }).join('')
             : '';
 
           return lines + sourceSection;
@@ -2933,7 +2941,8 @@ Regler for output:
 - Returnér PRÆCIST et JSON-array med ${toProcess.length} strings — én per produkt i samme rækkefølge.
 - Format: ["indhold for produkt 1", "indhold for produkt 2", ...]
 - Ingen forklaringer, ingen nøgler, kun arrayet.
-- Hvert array-element skal omhandle det specifikke produkts egne data — brug ikke generisk webshop-indhold.${formatInstruction}${sourcesOnlyInstruction}
+- Hvert array-element skal omhandle det specifikke produkts egne egenskaber, specifikationer og fordele.
+- Kildedata (KILDEDATA-sektioner) bruges som faktabasis for produktspecifikke oplysninger — generer ikke indhold om logistik, leveringstider, priser eller generel webshop-service medmindre det er eksplicit anmodet i instruktionen.${formatInstruction}${sourcesOnlyInstruction}
 
 PRODUKTER (brug disse data til produktspecifik generering):
 ${productLines}`;
