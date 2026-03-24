@@ -2889,12 +2889,16 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
           const lines = [
             `Produkt ${i + 1}:`,
             `  titel: ${variables!.title}`,
+            variables!.handle ? `  handle: ${variables!.handle}` : '',
             variables!.vendor ? `  leverandør: ${variables!.vendor}` : '',
             variables!.productType ? `  produkttype: ${variables!.productType}` : '',
             variables!.collections ? `  kollektioner: ${variables!.collections}` : '',
+            variables!.status ? `  status: ${variables!.status}` : '',
+            variables!.barcode ? `  ean/stregkode: ${variables!.barcode}` : '',
             v ? `  sku: ${(v as any).sku ?? ''}` : '',
             v ? `  pris: ${(v as any).price ?? ''}` : '',
-            variables!.descriptionHtml ? `  beskrivelse: ${variables!.descriptionHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)}` : '',
+            variables!.weight ? `  vægt: ${variables!.weight}${variables!.weightUnit ? ' ' + variables!.weightUnit : ''}` : '',
+            variables!.descriptionHtml ? `  beskrivelse: ${variables!.descriptionHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500)}` : '',
           ].filter(Boolean).join('\n');
 
           const sourceSection = allSourceRows.length > 0
@@ -2911,20 +2915,27 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
         }).join('\n\n---\n\n');
 
         const shopIntroContext = aiIntroduction.trim() ? `\n\nWEBSHOPPEN:\n${aiIntroduction.trim()}` : '';
-        const renderedInstruction = renderPrompt(promptTemplate, toProcess[0]?.variables ?? {});
 
+        // Use the raw prompt template here — do NOT renderPrompt with first product's variables.
+        // Rendering with one product's data bakes that product's context into the instruction for ALL products,
+        // causing the AI to generate content about product 1 for every product in the batch.
+        // Instead, instruct the AI to apply the template to each product's individual data from PRODUKTER.
         const batchPrompt = `${masterPrompt}${shopIntroContext}
 
 Du skal generere feltværdien "${fd.label}" for hvert af de ${toProcess.length} produkter herunder.
+Generer PRODUKTSPECIFIKT indhold for hvert produkt baseret på produktets egne data i PRODUKTER-sektionen.
+Erstat skabelonvariabler ({{title}}, {{vendor}}, {{productType}} osv.) med det pågældende produkts specifikke data.
 
-Instruktion: ${renderedInstruction}
+Instruktionsformat (gælder individuelt for hvert produkt):
+${promptTemplate}
 
 Regler for output:
 - Returnér PRÆCIST et JSON-array med ${toProcess.length} strings — én per produkt i samme rækkefølge.
-- Format: ["værdi for produkt 1", "værdi for produkt 2", ...]
-- Ingen forklaringer, ingen nøgler, kun arrayet.${formatInstruction}${sourcesOnlyInstruction}
+- Format: ["indhold for produkt 1", "indhold for produkt 2", ...]
+- Ingen forklaringer, ingen nøgler, kun arrayet.
+- Hvert array-element skal omhandle det specifikke produkts egne data — brug ikke generisk webshop-indhold.${formatInstruction}${sourcesOnlyInstruction}
 
-PRODUKTER:
+PRODUKTER (brug disse data til produktspecifik generering):
 ${productLines}`;
 
         let batchResults: string[] | null = null;
@@ -2957,15 +2968,28 @@ ${productLines}`;
           if (batchResults) {
             suggested = batchResults[i] ?? '';
           } else {
-            // Individual fallback — exactly like the individual AI worker
+            // Individual fallback — exactly like the individual AI worker (single-product prompt)
             try {
+              // Build supplier context block (same format as individual AI worker)
               const supplierContext = allSourceRows.length > 0
                 ? allSourceRows.map(({ sourceName, rowData }: { sourceName: string; rowData: Record<string, unknown> }) => {
                     const dataLines = Object.entries(rowData).filter(([, v]) => String(v).trim()).map(([k, v]) => `  ${k}: ${v}`).join('\n');
-                    return `\n\nKILDEDATA fra "${sourceName}":\n[${sourceName}]\n${dataLines}`;
+                    const sourceData = `[${sourceName}]\n${dataLines}`;
+                    return `\n\nKILDEDATA fra "${sourceName}" (brug som faktabasis — reformulér med egne ord):\n${sourceData}`;
                   }).join('')
                 : '';
-              const rendered = renderPrompt(promptTemplate, variables ?? {});
+              // Include supplier variables in renderPrompt (same as individual AI worker's allVariables)
+              const supplierVars: Record<string, string> = {};
+              for (const { rowData } of allSourceRows) {
+                for (const [col, value] of Object.entries(rowData)) {
+                  const strVal = String(value ?? '').trim();
+                  if (strVal && !(variables as Record<string, string>)[col]) {
+                    supplierVars[`supplier_${col}`] = strVal;
+                  }
+                }
+              }
+              const allVariables = { ...(variables ?? {}), ...supplierVars };
+              const rendered = renderPrompt(promptTemplate, allVariables);
               const fallbackFormatInstruction = outputIsHtml
                 ? '\n\nVIGTIGT: Generer HTML med passende tags (<p>, <ul>, <li>, <strong> osv.).'
                 : '\n\nVIGTIGT: Returnér UDELUKKENDE ren tekst. Brug IKKE HTML-tags, markdown eller anden formatering.';
