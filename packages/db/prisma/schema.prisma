@@ -878,6 +878,7 @@ model RunCampaign {
   sourceIdsJson    Json     @default("[]") // string[] — source IDs to include (empty = all active)
   sourcesOnly      Boolean  @default(false)
   promptsJson      Json     @default("{}") // { fieldId: promptTemplateId }
+  autoSync         Boolean  @default(false)
   totalItems       Int      @default(0)
   doneItems        Int      @default(0)
   failedItems      Int      @default(0)

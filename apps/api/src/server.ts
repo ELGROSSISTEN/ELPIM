@@ -10171,6 +10171,8 @@ app.post('/run-campaigns', async (request: any, reply: any) => {
     overwriteJson?: string[];
     sourceIdsJson?: string[];
     sourcesOnly?: boolean;
+    promptsJson?: Record<string, string>;
+    autoSync?: boolean;
   };
 
   if (!body.name?.trim()) return reply.code(400).send({ error: 'name er påkrævet' });
@@ -10189,6 +10191,7 @@ app.post('/run-campaigns', async (request: any, reply: any) => {
       sourceIdsJson: body.sourceIdsJson ?? [],
       sourcesOnly: body.sourcesOnly ?? false,
       promptsJson: body.promptsJson ?? {},
+      autoSync: body.autoSync ?? false,
     },
   });
   return reply.code(201).send({ campaign });
@@ -10421,6 +10424,78 @@ app.patch('/run-campaigns/:id/items/:itemId', async (request: any, reply: any) =
     data: { status: body.status, ...(body.status === 'pending' ? { errorMsg: null, processedAt: null, fieldsDoneJson: {} } : {}) },
   });
   return { ok: true };
+});
+
+// POST /run-campaigns/:id/sync — enqueue outbound sync for all done items
+app.post('/run-campaigns/:id/sync', async (request: any, reply: any) => {
+  if (!(await withAuth(request, reply))) return;
+  const user = await getCurrentUser(request);
+  const shopId = await resolveShopIdForPlatformAdmin(request, user);
+  if (!shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+
+  const { id } = request.params as { id: string };
+  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId } });
+  if (!campaign) return reply.code(404).send({ error: 'Kampagne ikke fundet' });
+
+  const doneItems = await prisma.runCampaignItem.findMany({
+    where: { campaignId: id, status: 'done' },
+    select: { id: true, productId: true },
+    orderBy: { sortOrder: 'asc' },
+  });
+  if (doneItems.length === 0) return reply.code(400).send({ error: 'Ingen færdige produkter at synkronisere' });
+
+  // Build system-field patch per product if campaign includes system fields
+  const systemFieldIds = (campaign.fieldsJson as string[]).filter((f) => f.startsWith('__'));
+  const productDataMap = new Map<string, { descriptionHtml: string | null; seoJson: unknown; title: string }>();
+  if (systemFieldIds.length > 0) {
+    const products = await prisma.product.findMany({
+      where: { id: { in: doneItems.map((i) => i.productId) } },
+      select: { id: true, descriptionHtml: true, seoJson: true, title: true },
+    });
+    for (const p of products) productDataMap.set(p.id, p);
+  }
+
+  const buildPatch = (productId: string): Record<string, unknown> => {
+    if (systemFieldIds.length === 0) return {};
+    const p = productDataMap.get(productId);
+    if (!p) return {};
+    const patch: Record<string, unknown> = {};
+    if (systemFieldIds.includes('__description') && p.descriptionHtml != null) patch.descriptionHtml = p.descriptionHtml;
+    if ((systemFieldIds.includes('__seo_title') || systemFieldIds.includes('__seo_description')) && p.seoJson) patch.seoJson = p.seoJson;
+    if (systemFieldIds.includes('__title')) patch.title = p.title;
+    return patch;
+  };
+
+  // Enqueue sync jobs with staggered delays (200 ms apart ≈ 5 jobs/s, well within Shopify's ~50 pts/s budget)
+  // Process in chunks to avoid holding a massive transaction
+  const CHUNK = 500;
+  let queued = 0;
+  for (let offset = 0; offset < doneItems.length; offset += CHUNK) {
+    const chunk = doneItems.slice(offset, offset + CHUNK);
+    const jobs = await Promise.all(
+      chunk.map((item) =>
+        prisma.syncJob.create({
+          data: { shopId, type: 'outbound_product_patch', payloadJson: { productId: item.productId, patch: buildPatch(item.productId) } as any },
+        }),
+      ),
+    );
+    await syncQueue.addBulk(
+      jobs.map((job, i) => ({
+        name: 'outbound-product',
+        data: { syncJobId: job.id },
+        opts: { jobId: job.id, delay: (offset + i) * 200 },
+      })),
+    );
+    queued += chunk.length;
+  }
+
+  // Stamp syncedAt on all done items
+  await prisma.runCampaignItem.updateMany({
+    where: { campaignId: id, status: 'done' },
+    data: { syncedAt: new Date() },
+  });
+
+  return { ok: true, queued };
 });
 
 // DELETE /run-campaigns/:id — delete campaign and all items/logs

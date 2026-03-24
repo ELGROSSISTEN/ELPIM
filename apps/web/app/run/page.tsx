@@ -14,7 +14,7 @@ type Campaign = {
   fieldsJson: string[]; batchSize: number; concurrency: number;
   collectionsFirst: boolean; excludeSkusJson: string[]; overwriteJson: string[];
   totalItems: number; doneItems: number; failedItems: number; skippedItems: number;
-  tokensUsed: number; costUsd: string;
+  tokensUsed: number; costUsd: string; autoSync: boolean;
   startedAt: string | null; completedAt: string | null; createdAt: string;
 };
 
@@ -163,11 +163,13 @@ export default function RunPage() {
   const [newConcurrency, setNewConcurrency] = useState(5);
   const [newCollectionsFirst, setNewCollectionsFirst] = useState(true);
   const [newExcludeSkus, setNewExcludeSkus] = useState('');
+  const [newAutoSync, setNewAutoSync] = useState(false);
 
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
 
   const [statusMsg, setStatusMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
   const prevCampaignStatusRef = useRef<string | null>(null);
 
@@ -275,6 +277,7 @@ export default function RunPage() {
           sourceIdsJson: newSourceIds,
           sourcesOnly: newSourcesOnly,
           promptsJson: newPromptsJson,
+          autoSync: newAutoSync,
         }),
       });
       const campaign = res.campaign;
@@ -287,7 +290,7 @@ export default function RunPage() {
       setStatusMsg(`Klar: ${popRes.total.toLocaleString('da-DK')} produkter indlæst`);
 
       setShowCreate(false);
-      setNewName(''); setNewFields([]); setNewPromptsJson({}); setNewScope(10); setNewSourceIds([]); setNewSourcesOnly(false);
+      setNewName(''); setNewFields([]); setNewPromptsJson({}); setNewScope(10); setNewSourceIds([]); setNewSourcesOnly(false); setNewAutoSync(false);
       await loadCampaigns();
       setSelectedId(campaign.id);
     } catch (err) {
@@ -328,6 +331,20 @@ export default function RunPage() {
       setStatusMsg('');
     } catch (err) {
       setStatusMsg(err instanceof Error ? err.message : 'Fejl');
+    }
+  };
+
+  const syncCampaign = async (id: string): Promise<void> => {
+    try {
+      setSyncing(true);
+      setStatusMsg('Synkroniserer til Shopify...');
+      const res = await apiFetch<{ ok: boolean; queued: number }>(`/run-campaigns/${id}/sync`, { method: 'POST' });
+      setStatusMsg(`${res.queued.toLocaleString('da-DK')} produkter sendt til Shopify`);
+      await loadItems(id, itemsPage, itemsStatus);
+    } catch (err) {
+      setStatusMsg(err instanceof Error ? err.message : 'Synkronisering fejlede');
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -663,6 +680,18 @@ export default function RunPage() {
               )}
             </div>
 
+            {/* Auto-sync toggle */}
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="accent-indigo-600 w-4 h-4"
+                checked={newAutoSync}
+                onChange={(e) => setNewAutoSync(e.target.checked)}
+              />
+              <span className="text-sm font-medium text-slate-700">Synkroniser automatisk til Shopify når kørslen er færdig</span>
+              <span className="text-xs text-slate-400">(starter Shopify-sync uden at du behøver trykke manuelt)</span>
+            </label>
+
             {/* Submit */}
             <div className="flex items-center gap-3 pt-1">
               <button
@@ -759,6 +788,15 @@ export default function RunPage() {
                       onClick={() => void pauseCampaign(campaign.id)}
                     >
                       ⏸  Sæt på pause
+                    </button>
+                  )}
+                  {campaign.status === 'done' && campaign.doneItems > 0 && (
+                    <button
+                      className="ep-btn-primary px-5 py-2 text-sm font-semibold disabled:opacity-50"
+                      onClick={() => void syncCampaign(campaign.id)}
+                      disabled={syncing}
+                    >
+                      {syncing ? 'Synkroniserer...' : '↑ Synkroniser til Shopify'}
                     </button>
                   )}
                   {campaign.status !== 'running' && (

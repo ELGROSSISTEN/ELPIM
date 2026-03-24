@@ -2723,6 +2723,64 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
           data: { status: 'done', completedAt: new Date(), doneItems: totalDone, failedItems: totalFailed, skippedItems: totalSkipped, tokensUsed: campaignTokensInput + campaignTokensOutput, costUsd: finalCostUsd },
         });
         await logCampaign(campaignId, 'success', `Kørsel færdig! ${totalDone} behandlet, ${totalFailed} fejlet, ${totalSkipped} sprunget over.`);
+
+        // Auto-sync to Shopify if enabled
+        if ((campaign as any).autoSync) {
+          try {
+            const systemFieldIds = (campaign.fieldsJson as string[]).filter((f) => f.startsWith('__'));
+            const doneItemsForSync = await (prisma as any).runCampaignItem.findMany({
+              where: { campaignId, status: 'done' },
+              select: { id: true, productId: true },
+              orderBy: { sortOrder: 'asc' },
+            });
+            const productDataMap = new Map<string, { descriptionHtml: string | null; seoJson: unknown; title: string }>();
+            if (systemFieldIds.length > 0 && doneItemsForSync.length > 0) {
+              const products = await prisma.product.findMany({
+                where: { id: { in: (doneItemsForSync as any[]).map((i: any) => i.productId) } },
+                select: { id: true, descriptionHtml: true, seoJson: true, title: true },
+              });
+              for (const p of products) productDataMap.set(p.id, p);
+            }
+            const buildSyncPatch = (productId: string): Record<string, unknown> => {
+              if (systemFieldIds.length === 0) return {};
+              const p = productDataMap.get(productId);
+              if (!p) return {};
+              const patch: Record<string, unknown> = {};
+              if (systemFieldIds.includes('__description') && p.descriptionHtml != null) patch.descriptionHtml = p.descriptionHtml;
+              if ((systemFieldIds.includes('__seo_title') || systemFieldIds.includes('__seo_description')) && p.seoJson) patch.seoJson = p.seoJson;
+              if (systemFieldIds.includes('__title')) patch.title = p.title;
+              return patch;
+            };
+            const CHUNK = 500;
+            let syncOffset = 0;
+            for (let chunkStart = 0; chunkStart < doneItemsForSync.length; chunkStart += CHUNK) {
+              const chunk = (doneItemsForSync as any[]).slice(chunkStart, chunkStart + CHUNK);
+              const syncJobs = await Promise.all(
+                chunk.map((item: any) =>
+                  prisma.syncJob.create({
+                    data: { shopId: campaign.shopId, type: 'outbound_product_patch', payloadJson: { productId: item.productId, patch: buildSyncPatch(item.productId) } as any },
+                  }),
+                ),
+              );
+              await deltaSyncQueue.addBulk(
+                syncJobs.map((sj, i) => ({
+                  name: 'outbound-product',
+                  data: { syncJobId: sj.id },
+                  opts: { jobId: sj.id, delay: (syncOffset + i) * 200 },
+                })),
+              );
+              syncOffset += chunk.length;
+            }
+            await (prisma as any).runCampaignItem.updateMany({
+              where: { campaignId, status: 'done' },
+              data: { syncedAt: new Date() },
+            });
+            await logCampaign(campaignId, 'success', `Auto-sync igangsat: ${doneItemsForSync.length} produkter klar til Shopify.`);
+          } catch (syncErr: unknown) {
+            await logCampaign(campaignId, 'warn', `Auto-sync fejlede: ${syncErr instanceof Error ? syncErr.message : String(syncErr)}`);
+          }
+        }
+
         break;
       }
 
