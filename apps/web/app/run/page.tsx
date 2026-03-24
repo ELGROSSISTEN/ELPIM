@@ -497,19 +497,6 @@ export default function RunPage() {
                               <div className="text-xs text-slate-400">{fd.type}</div>
                             </div>
                           </div>
-                          {checked && (
-                            <label className="flex items-center gap-1.5 mt-2 pl-5 text-xs text-slate-500 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                className="accent-amber-500"
-                                checked={newOverwrite.includes(fd.id)}
-                                onChange={(e) => setNewOverwrite((prev) => e.target.checked ? [...prev, fd.id] : prev.filter((x) => x !== fd.id))}
-                              />
-                              <span className={newOverwrite.includes(fd.id) ? 'text-amber-600 font-medium' : ''}>
-                                Overskriv eksisterende
-                              </span>
-                            </label>
-                          )}
                         </label>
                       );
                     })}
