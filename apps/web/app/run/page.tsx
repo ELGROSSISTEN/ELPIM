@@ -7,6 +7,7 @@ import { apiFetch } from '../../lib/api';
 
 type FieldDef = { id: string; label: string; type: string; isBuiltIn?: boolean; key?: string; scope?: string };
 type Source = { id: string; name: string; active: boolean };
+type PromptTemplate = { id: string; name: string; body: string; category: string; isDefault: boolean };
 
 type Campaign = {
   id: string; name: string; status: string;
@@ -123,9 +124,9 @@ function fmtCostDkk(dkk: number): string {
 
 function scopeLabel(total: number): string {
   if (total === 0) return '—';
-  if (total <= 100) return '100 produkter (test)';
-  if (total <= 1000) return '1.000 produkter (stikprøve)';
-  return `${total.toLocaleString('da-DK')} produkter (fuld udrulning)`;
+  if (total <= 10) return '10 produkter (kvalitetstest)';
+  if (total <= 100) return '100 produkter (prisestimering)';
+  return `${total.toLocaleString('da-DK')} produkter`;
 }
 
 // ── Main component ─────────────────────────────────────────────────────────
@@ -147,11 +148,13 @@ export default function RunPage() {
   const [itemsStatus, setItemsStatus] = useState('all');
   const [fieldDefs, setFieldDefs] = useState<FieldDef[]>([]);
   const [sources, setSources] = useState<Source[]>([]);
+  const [prompts, setPrompts] = useState<PromptTemplate[]>([]);
 
   // Create form
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [newFields, setNewFields] = useState<string[]>([]);
+  const [newPromptsJson, setNewPromptsJson] = useState<Record<string, string>>({});
   const [newScope, setNewScope] = useState<number>(10);
   const [newSourceIds, setNewSourceIds] = useState<string[]>([]);
   const [newSourcesOnly, setNewSourcesOnly] = useState(false);
@@ -168,7 +171,7 @@ export default function RunPage() {
   const logEndRef = useRef<HTMLDivElement>(null);
   const prevCampaignStatusRef = useRef<string | null>(null);
 
-  useEffect(() => { void loadCampaigns(); void loadFieldDefs(); void loadSources(); }, []);
+  useEffect(() => { void loadCampaigns(); void loadFieldDefs(); void loadSources(); void loadPrompts(); }, []);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -211,6 +214,13 @@ export default function RunPage() {
     try {
       const res = await apiFetch<{ fields: FieldDef[] }>('/fields');
       setFieldDefs(res.fields ?? []);
+    } catch { /* ignore */ }
+  };
+
+  const loadPrompts = async (): Promise<void> => {
+    try {
+      const res = await apiFetch<{ prompts: PromptTemplate[] }>('/prompts');
+      setPrompts(res.prompts ?? []);
     } catch { /* ignore */ }
   };
 
@@ -264,6 +274,7 @@ export default function RunPage() {
           overwriteJson: newFields, // always overwrite all selected fields
           sourceIdsJson: newSourceIds,
           sourcesOnly: newSourcesOnly,
+          promptsJson: newPromptsJson,
         }),
       });
       const campaign = res.campaign;
@@ -276,7 +287,7 @@ export default function RunPage() {
       setStatusMsg(`Klar: ${popRes.total.toLocaleString('da-DK')} produkter indlæst`);
 
       setShowCreate(false);
-      setNewName(''); setNewFields([]); setNewScope(10); setNewSourceIds([]); setNewSourcesOnly(false);
+      setNewName(''); setNewFields([]); setNewPromptsJson({}); setNewScope(10); setNewSourceIds([]); setNewSourcesOnly(false);
       await loadCampaigns();
       setSelectedId(campaign.id);
     } catch (err) {
@@ -448,7 +459,7 @@ export default function RunPage() {
 
               {/* System fields */}
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Systemfelter</p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
                 {SYSTEM_FIELD_DEFS.map((fd) => {
                   const checked = newFields.includes(fd.id);
                   return (
@@ -468,6 +479,20 @@ export default function RunPage() {
                           <div className="text-xs text-slate-400">{fd.type}</div>
                         </div>
                       </div>
+                      {checked && prompts.length > 0 && (
+                        <div className="mt-2 pl-5" onClick={(e) => e.stopPropagation()}>
+                          <select
+                            className="ep-select text-xs w-full"
+                            value={newPromptsJson[fd.id] ?? ''}
+                            onChange={(e) => setNewPromptsJson((prev) => ({ ...prev, [fd.id]: e.target.value }))}
+                          >
+                            <option value="">— Standardprompt —</option>
+                            {prompts.map((pt) => (
+                              <option key={pt.id} value={pt.id}>{pt.name}{pt.isDefault ? ' ★' : ''}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                     </label>
                   );
                 })}
@@ -497,6 +522,20 @@ export default function RunPage() {
                               <div className="text-xs text-slate-400">{fd.type}</div>
                             </div>
                           </div>
+                          {checked && prompts.length > 0 && (
+                            <div className="mt-2 pl-5" onClick={(e) => e.stopPropagation()}>
+                              <select
+                                className="ep-select text-xs w-full"
+                                value={newPromptsJson[fd.id] ?? ''}
+                                onChange={(e) => setNewPromptsJson((prev) => ({ ...prev, [fd.id]: e.target.value }))}
+                              >
+                                <option value="">— Standardprompt —</option>
+                                {prompts.map((pt) => (
+                                  <option key={pt.id} value={pt.id}>{pt.name}{pt.isDefault ? ' ★' : ''}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
                         </label>
                       );
                     })}
@@ -661,6 +700,23 @@ export default function RunPage() {
         {/* ── Campaign detail ── */}
         {campaign && (
           <>
+            {/* Draft guidance banner */}
+            {campaign.status === 'draft' && campaign.totalItems > 0 && (
+              <div className="rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 p-4 flex items-center justify-between gap-4 shadow-lg">
+                <div className="text-white">
+                  <div className="font-semibold text-sm">Klar til start</div>
+                  <div className="text-xs text-indigo-100 mt-0.5">{campaign.totalItems.toLocaleString('da-DK')} produkter indlæst — tryk for at starte AI-generering</div>
+                </div>
+                <button
+                  className="shrink-0 bg-white text-indigo-700 font-semibold text-sm px-5 py-2 rounded-lg hover:bg-indigo-50 transition shadow"
+                  onClick={() => void startCampaign(campaign.id)}
+                  disabled={loading}
+                >
+                  ▶ Start kørsel
+                </button>
+              </div>
+            )}
+
             {/* Header */}
             <div className="ep-card p-5">
               <div className="flex flex-wrap items-start justify-between gap-4">

@@ -2668,14 +2668,14 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
     }
     const openAiApiKey = decryptSecret(encryptedPlatformKey, env.MASTER_ENCRYPTION_KEY);
 
-    // Load prompt templates for each field
+    // Load prompt templates for each field — use per-field selection from promptsJson, fall back to default
+    const selectedPrompts: Record<string, string> = ((campaign as any).promptsJson as Record<string, string>) ?? {};
     const promptsByField: Record<string, string> = {};
     for (const fd of fieldDefs) {
-      const pt = await prisma.promptTemplate.findFirst({
-        where: { shopId: campaign.shopId, isDefault: true },
-        orderBy: { createdAt: 'desc' },
-        select: { body: true },
-      });
+      const selectedId = selectedPrompts[fd.id];
+      const pt = selectedId
+        ? await prisma.promptTemplate.findFirst({ where: { id: selectedId, shopId: campaign.shopId }, select: { body: true } })
+        : await prisma.promptTemplate.findFirst({ where: { shopId: campaign.shopId, isDefault: true }, orderBy: { createdAt: 'desc' }, select: { body: true } });
       promptsByField[fd.id] = pt?.body ?? (fd as any).defaultPrompt ?? `Generer ${fd.label} for produktet baseret på titel, type og leverandør.`;
     }
 

@@ -4423,8 +4423,9 @@ app.get('/prompts', async (request: any, reply: any) => {
     return;
   }
   const user = await getCurrentUser(request);
+  const shopId = await resolveShopIdForPlatformAdmin(request, user);
   const prompts = await prisma.promptTemplate.findMany({
-    where: { shopId: user?.shopId ?? '' },
+    where: { shopId: shopId ?? '' },
     orderBy: [{ category: 'asc' }, { updatedAt: 'desc' }],
   });
   return { prompts };
@@ -10187,6 +10188,7 @@ app.post('/run-campaigns', async (request: any, reply: any) => {
       overwriteJson: body.overwriteJson ?? [],
       sourceIdsJson: body.sourceIdsJson ?? [],
       sourcesOnly: body.sourcesOnly ?? false,
+      promptsJson: body.promptsJson ?? {},
     },
   });
   return reply.code(201).send({ campaign });

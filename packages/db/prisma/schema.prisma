@@ -877,6 +877,7 @@ model RunCampaign {
   overwriteJson    Json     @default("[]") // string[] — fieldDefIds where we overwrite existing values
   sourceIdsJson    Json     @default("[]") // string[] — source IDs to include (empty = all active)
   sourcesOnly      Boolean  @default(false)
+  promptsJson      Json     @default("{}") // { fieldId: promptTemplateId }
   totalItems       Int      @default(0)
   doneItems        Int      @default(0)
   failedItems      Int      @default(0)
