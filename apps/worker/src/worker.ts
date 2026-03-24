@@ -2830,7 +2830,7 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
           ].filter(Boolean).join('\n');
 
           const sourceSection = allSourceRows.length > 0
-            ? '\n' + allSourceRows.map(({ sourceName, rowData }) => {
+            ? '\n' + allSourceRows.map(({ sourceName, rowData }: { sourceName: string; rowData: Record<string, unknown> }) => {
                 const dataLines = Object.entries(rowData)
                   .filter(([, v]) => String(v).trim())
                   .map(([k, v]) => `    ${k}: ${v}`)
@@ -2892,7 +2892,7 @@ ${productLines}`;
             // Individual fallback — exactly like the individual AI worker
             try {
               const supplierContext = allSourceRows.length > 0
-                ? allSourceRows.map(({ sourceName, rowData }) => {
+                ? allSourceRows.map(({ sourceName, rowData }: { sourceName: string; rowData: Record<string, unknown> }) => {
                     const dataLines = Object.entries(rowData).filter(([, v]) => String(v).trim()).map(([k, v]) => `  ${k}: ${v}`).join('\n');
                     return `\n\nKILDEDATA fra "${sourceName}":\n[${sourceName}]\n${dataLines}`;
                   }).join('')
