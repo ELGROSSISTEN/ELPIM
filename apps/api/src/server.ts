@@ -359,6 +359,16 @@ const getHeaderShopId = (request: any): string | null => {
 
 const resolveActiveShopId = (request: any, user: { shopId?: string | null }): string | null => getHeaderShopId(request) ?? user.shopId ?? null;
 
+// For platform_admin users with no shopId header, fall back to first shop in system
+const resolveShopIdForPlatformAdmin = async (request: any, user: any): Promise<string | null> => {
+  const fromHeader = getHeaderShopId(request);
+  if (fromHeader) return fromHeader;
+  if (user.shopId) return user.shopId;
+  if (!hasPlatformGlobalAccess(user.platformRole)) return null;
+  const first = await prisma.shop.findFirst({ orderBy: { createdAt: 'asc' }, select: { id: true } });
+  return first?.id ?? null;
+};
+
 const ensureShopAccess = async (params: { user: any; shopId: string }): Promise<boolean> => {
   if (hasPlatformGlobalAccess(params.user?.platformRole)) {
     return true;
@@ -4225,11 +4235,12 @@ app.get('/fields', async (request: any, reply: any) => {
     return;
   }
   const user = await getCurrentUser(request);
-  if (user?.shopId) {
-    await ensureBuiltInFields(user.shopId);
+  const shopId = await resolveShopIdForPlatformAdmin(request, user);
+  if (shopId) {
+    await ensureBuiltInFields(shopId);
   }
   const fields = await prisma.fieldDefinition.findMany({
-    where: { shopId: user?.shopId ?? '' },
+    where: { shopId: shopId ?? '' },
     include: { mapping: true },
     orderBy: [{ isBuiltIn: 'desc' }, { createdAt: 'asc' }],
   });
@@ -5731,7 +5742,7 @@ app.get('/products', async (request: any, reply) => {
     return;
   }
   const user = await getCurrentUser(request);
-  const shopId = resolveActiveShopId(request, user ?? {}) ?? '';
+  const shopId = (await resolveShopIdForPlatformAdmin(request, user)) ?? '';
   const q = request.query.q as string | undefined;
   const pageRaw = Number(request.query.page ?? 1);
   const pageSizeRaw = Number(request.query.pageSize ?? 10);
@@ -6184,7 +6195,7 @@ app.get('/products/:id', async (request: any, reply) => {
   }
 
   const user = await getCurrentUser(request);
-  const shopId = resolveActiveShopId(request, user ?? {});
+  const shopId = await resolveShopIdForPlatformAdmin(request, user);
   if (!shopId) {
     return reply.code(400).send({ error: 'Connect a shop first' });
   }
@@ -10125,10 +10136,11 @@ app.post('/notify/bulk-done', async (request: any, reply: any) => {
 app.get('/run-campaigns', async (request: any, reply: any) => {
   if (!(await withAuth(request, reply))) return;
   const user = await getCurrentUser(request);
-  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+  const shopId = await resolveShopIdForPlatformAdmin(request, user);
+  if (!shopId) return reply.code(400).send({ error: 'Connect a shop first' });
 
   const campaigns = await prisma.runCampaign.findMany({
-    where: { shopId: user.shopId },
+    where: { shopId },
     orderBy: { createdAt: 'desc' },
     select: {
       id: true, name: true, status: true, fieldsJson: true,
@@ -10145,7 +10157,8 @@ app.get('/run-campaigns', async (request: any, reply: any) => {
 app.post('/run-campaigns', async (request: any, reply: any) => {
   if (!(await withAuth(request, reply))) return;
   const user = await getCurrentUser(request);
-  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+  const shopId = await resolveShopIdForPlatformAdmin(request, user);
+  if (!shopId) return reply.code(400).send({ error: 'Connect a shop first' });
 
   const body = (request.body ?? {}) as {
     name?: string;
@@ -10162,7 +10175,7 @@ app.post('/run-campaigns', async (request: any, reply: any) => {
 
   const campaign = await prisma.runCampaign.create({
     data: {
-      shopId: user.shopId,
+      shopId,
       name: body.name.trim(),
       fieldsJson: body.fieldsJson,
       batchSize: body.batchSize ?? 50,
@@ -10179,11 +10192,12 @@ app.post('/run-campaigns', async (request: any, reply: any) => {
 app.get('/run-campaigns/:id', async (request: any, reply: any) => {
   if (!(await withAuth(request, reply))) return;
   const user = await getCurrentUser(request);
-  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+  const shopId = await resolveShopIdForPlatformAdmin(request, user);
+  if (!shopId) return reply.code(400).send({ error: 'Connect a shop first' });
 
   const { id } = request.params as { id: string };
   const campaign = await prisma.runCampaign.findFirst({
-    where: { id, shopId: user.shopId },
+    where: { id, shopId },
   });
   if (!campaign) return reply.code(404).send({ error: 'Kampagne ikke fundet' });
 
@@ -10207,10 +10221,11 @@ app.get('/run-campaigns/:id', async (request: any, reply: any) => {
 app.get('/run-campaigns/:id/items', async (request: any, reply: any) => {
   if (!(await withAuth(request, reply))) return;
   const user = await getCurrentUser(request);
-  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+  const shopId = await resolveShopIdForPlatformAdmin(request, user);
+  if (!shopId) return reply.code(400).send({ error: 'Connect a shop first' });
 
   const { id } = request.params as { id: string };
-  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId: user.shopId }, select: { id: true } });
+  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId }, select: { id: true } });
   if (!campaign) return reply.code(404).send({ error: 'Kampagne ikke fundet' });
 
   const q = request.query as { status?: string; page?: string; pageSize?: string };
@@ -10239,10 +10254,11 @@ app.get('/run-campaigns/:id/items', async (request: any, reply: any) => {
 app.post('/run-campaigns/:id/populate', async (request: any, reply: any) => {
   if (!(await withAuth(request, reply))) return;
   const user = await getCurrentUser(request);
-  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+  const shopId = await resolveShopIdForPlatformAdmin(request, user);
+  if (!shopId) return reply.code(400).send({ error: 'Connect a shop first' });
 
   const { id } = request.params as { id: string };
-  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId: user.shopId } });
+  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId } });
   if (!campaign) return reply.code(404).send({ error: 'Kampagne ikke fundet' });
   if (campaign.status !== 'draft') return reply.code(400).send({ error: 'Kan kun populere en draft-kampagne' });
 
@@ -10254,7 +10270,7 @@ app.post('/run-campaigns/:id/populate', async (request: any, reply: any) => {
   // Products with at least one collection — sorted by collection then product
   const withCollections = await prisma.product.findMany({
     where: {
-      shopId: user.shopId,
+      shopId,
       shopifyDeletedAt: null,
       ...(excludeSkus.length > 0 ? {
         NOT: { variants: { some: { sku: { in: excludeSkus } } } },
@@ -10274,7 +10290,7 @@ app.post('/run-campaigns/:id/populate', async (request: any, reply: any) => {
   // Products without any collection (only if limit not yet reached)
   const withoutCollections = campaign.collectionsFirst && remainingLimit !== 0 ? await prisma.product.findMany({
     where: {
-      shopId: user.shopId,
+      shopId,
       shopifyDeletedAt: null,
       ...(excludeSkus.length > 0 ? {
         NOT: { variants: { some: { sku: { in: excludeSkus } } } },
@@ -10325,10 +10341,11 @@ app.post('/run-campaigns/:id/populate', async (request: any, reply: any) => {
 app.post('/run-campaigns/:id/start', async (request: any, reply: any) => {
   if (!(await withAuth(request, reply))) return;
   const user = await getCurrentUser(request);
-  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+  const shopId = await resolveShopIdForPlatformAdmin(request, user);
+  if (!shopId) return reply.code(400).send({ error: 'Connect a shop first' });
 
   const { id } = request.params as { id: string };
-  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId: user.shopId } });
+  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId } });
   if (!campaign) return reply.code(404).send({ error: 'Kampagne ikke fundet' });
   if (campaign.status === 'running') return reply.code(400).send({ error: 'Kampagne kører allerede' });
   if (campaign.status === 'done') return reply.code(400).send({ error: 'Kampagne er allerede færdig' });
@@ -10344,7 +10361,7 @@ app.post('/run-campaigns/:id/start', async (request: any, reply: any) => {
   // Enqueue the campaign processing job
   const syncJob = await prisma.syncJob.create({
     data: {
-      shopId: user.shopId,
+      shopId,
       type: 'run_campaign',
       status: 'queued',
       payloadJson: { campaignId: id },
@@ -10363,10 +10380,11 @@ app.post('/run-campaigns/:id/start', async (request: any, reply: any) => {
 app.post('/run-campaigns/:id/pause', async (request: any, reply: any) => {
   if (!(await withAuth(request, reply))) return;
   const user = await getCurrentUser(request);
-  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+  const shopId = await resolveShopIdForPlatformAdmin(request, user);
+  if (!shopId) return reply.code(400).send({ error: 'Connect a shop first' });
 
   const { id } = request.params as { id: string };
-  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId: user.shopId } });
+  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId } });
   if (!campaign) return reply.code(404).send({ error: 'Kampagne ikke fundet' });
   if (campaign.status !== 'running') return reply.code(400).send({ error: 'Kampagne kører ikke' });
 
@@ -10381,10 +10399,11 @@ app.post('/run-campaigns/:id/pause', async (request: any, reply: any) => {
 app.patch('/run-campaigns/:id/items/:itemId', async (request: any, reply: any) => {
   if (!(await withAuth(request, reply))) return;
   const user = await getCurrentUser(request);
-  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+  const shopId = await resolveShopIdForPlatformAdmin(request, user);
+  if (!shopId) return reply.code(400).send({ error: 'Connect a shop first' });
 
   const { id, itemId } = request.params as { id: string; itemId: string };
-  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId: user.shopId }, select: { id: true } });
+  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId }, select: { id: true } });
   if (!campaign) return reply.code(404).send({ error: 'Kampagne ikke fundet' });
 
   const body = (request.body ?? {}) as { status?: string };
@@ -10401,10 +10420,11 @@ app.patch('/run-campaigns/:id/items/:itemId', async (request: any, reply: any) =
 app.delete('/run-campaigns/:id', async (request: any, reply: any) => {
   if (!(await withAuth(request, reply))) return;
   const user = await getCurrentUser(request);
-  if (!user?.shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+  const shopId = await resolveShopIdForPlatformAdmin(request, user);
+  if (!shopId) return reply.code(400).send({ error: 'Connect a shop first' });
 
   const { id } = request.params as { id: string };
-  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId: user.shopId }, select: { id: true, status: true } });
+  const campaign = await prisma.runCampaign.findFirst({ where: { id, shopId }, select: { id: true, status: true } });
   if (!campaign) return reply.code(404).send({ error: 'Kampagne ikke fundet' });
   if (campaign.status === 'running') return reply.code(400).send({ error: 'Stop kampagnen først' });
 

@@ -159,8 +159,8 @@ export default function RunPage() {
 
   const loadFieldDefs = async (): Promise<void> => {
     try {
-      const res = await apiFetch<{ fieldDefinitions: FieldDef[] }>('/field-definitions');
-      setFieldDefs(res.fieldDefinitions ?? []);
+      const res = await apiFetch<{ fields: FieldDef[] }>('/fields');
+      setFieldDefs(res.fields ?? []);
     } catch { /* ignore */ }
   };
 
