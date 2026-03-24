@@ -496,7 +496,7 @@ export default function RunPage() {
                           <div className="text-xs text-slate-400">{fd.type}</div>
                         </div>
                       </div>
-                      {checked && prompts.length > 0 && (
+                      {checked && (
                         <div className="mt-2 pl-5" onClick={(e) => e.stopPropagation()}>
                           <select
                             className="ep-select text-xs w-full"
@@ -508,6 +508,9 @@ export default function RunPage() {
                               <option key={pt.id} value={pt.id}>{pt.name}{pt.isDefault ? ' ★' : ''}</option>
                             ))}
                           </select>
+                          {prompts.length === 0 && (
+                            <p className="text-[11px] text-slate-400 mt-1">Opret prompt-skabeloner under AI → Prompts for at vælge her</p>
+                          )}
                         </div>
                       )}
                     </label>
@@ -539,7 +542,7 @@ export default function RunPage() {
                               <div className="text-xs text-slate-400">{fd.type}</div>
                             </div>
                           </div>
-                          {checked && prompts.length > 0 && (
+                          {checked && (
                             <div className="mt-2 pl-5" onClick={(e) => e.stopPropagation()}>
                               <select
                                 className="ep-select text-xs w-full"
@@ -551,6 +554,9 @@ export default function RunPage() {
                                   <option key={pt.id} value={pt.id}>{pt.name}{pt.isDefault ? ' ★' : ''}</option>
                                 ))}
                               </select>
+                              {prompts.length === 0 && (
+                                <p className="text-[11px] text-slate-400 mt-1">Opret prompt-skabeloner under AI → Prompts for at vælge her</p>
+                              )}
                             </div>
                           )}
                         </label>
