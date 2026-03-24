@@ -5,7 +5,7 @@ import { apiFetch } from '../../lib/api';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-type FieldDef = { id: string; label: string; type: string; isBuiltIn?: boolean };
+type FieldDef = { id: string; label: string; type: string; isBuiltIn?: boolean; key?: string; scope?: string };
 type Source = { id: string; name: string; active: boolean };
 
 type Campaign = {
@@ -487,12 +487,12 @@ export default function RunPage() {
                 })}
               </div>
 
-              {/* Custom fields — exclude built-in system fields (those live in SYSTEM_FIELD_DEFS above) */}
-              {fieldDefs.filter((fd) => !fd.isBuiltIn).length > 0 && (
+              {/* Custom fields — exclude built-ins, collection fields, and system-key fields */}
+              {fieldDefs.filter((fd) => !fd.isBuiltIn && fd.scope !== 'collection' && !fd.key?.startsWith('_')).length > 0 && (
                 <>
                   <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Brugerdefinerede felter</p>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {fieldDefs.filter((fd) => !fd.isBuiltIn).map((fd) => {
+                    {fieldDefs.filter((fd) => !fd.isBuiltIn && fd.scope !== 'collection' && !fd.key?.startsWith('_')).map((fd) => {
                       const checked = newFields.includes(fd.id);
                       return (
                         <label

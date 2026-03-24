@@ -2860,10 +2860,14 @@ PRODUKTER:
 ${productLines}`;
 
         let batchResults: string[] | null = null;
+        let batchPromptPerProduct = 0;
+        let batchCompletionPerProduct = 0;
         try {
           const aiResult = await callOpenAi(openAiApiKey, batchPrompt, { webSearchEnabled: false });
           campaignTokensInput += aiResult.usage.promptTokens;
           campaignTokensOutput += aiResult.usage.completionTokens;
+          batchPromptPerProduct = Math.ceil(aiResult.usage.promptTokens / Math.max(1, toProcess.length));
+          batchCompletionPerProduct = Math.ceil(aiResult.usage.completionTokens / Math.max(1, toProcess.length));
           const raw = aiResult.text.trim();
           const jsonMatch = raw.match(/\[[\s\S]*\]/);
           if (jsonMatch) {
@@ -2879,6 +2883,8 @@ ${productLines}`;
         for (let i = 0; i < toProcess.length; i++) {
           const { item, product, variables, allSourceRows } = toProcess[i]!;
           let suggested: string;
+          let productPromptTokens = batchPromptPerProduct;
+          let productCompletionTokens = batchCompletionPerProduct;
 
           if (batchResults) {
             suggested = batchResults[i] ?? '';
@@ -2896,6 +2902,8 @@ ${productLines}`;
               const res = await callOpenAi(openAiApiKey, finalPrompt, { webSearchEnabled: false });
               campaignTokensInput += res.usage.promptTokens;
               campaignTokensOutput += res.usage.completionTokens;
+              productPromptTokens = res.usage.promptTokens;
+              productCompletionTokens = res.usage.completionTokens;
               suggested = res.text;
             } catch (err) {
               await logCampaign(campaignId, 'error', `Fejl ved ${product!.title} (${fd.label}): ${err instanceof Error ? err.message : String(err)}`, undefined, item.id);
@@ -2924,6 +2932,34 @@ ${productLines}`;
           const fieldValues = (item.fieldValuesJson ?? {}) as Record<string, string>;
           fieldValues[fd.id] = suggested;
           await (prisma as any).runCampaignItem.update({ where: { id: item.id }, data: { fieldsDoneJson: fieldsDone, fieldValuesJson: fieldValues } });
+
+          // Log AI usage (same as individual runs — shows in AI-forbrug)
+          const productTotalTokens = productPromptTokens + productCompletionTokens;
+          const productCostUsd = (productPromptTokens * OPENAI_INPUT_USD_PER_1K / 1000) + (productCompletionTokens * OPENAI_OUTPUT_USD_PER_1K / 1000);
+          await createAiUsageSafe({
+            shopId: campaign.shopId,
+            productId: product!.id,
+            userId: null,
+            feature: 'ai_campaign',
+            provider: 'openai',
+            model: env.OPENAI_MODEL,
+            promptTokens: productPromptTokens,
+            completionTokens: productCompletionTokens,
+            totalTokens: productTotalTokens,
+            estimatedCostUsd: productCostUsd,
+            estimatedCostDkk: productCostUsd * USD_TO_DKK,
+            metadataJson: { campaignId, itemId: item.id, fieldDefId: fd.id },
+          });
+          const occurredAt = new Date();
+          const monthKey = occurredAt.toISOString().slice(0, 7);
+          await createUsageEventSafe({
+            shopId: campaign.shopId,
+            occurredAt,
+            monthKey,
+            idempotencyKey: `campaign_${campaignId}_${item.id}_${fd.id}`,
+            quantity: 1,
+            metadataJson: { eventSource: 'ai_campaign', campaignId, fieldDefinitionId: fd.id },
+          });
         }
       }
 
