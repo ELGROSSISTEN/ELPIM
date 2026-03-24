@@ -484,8 +484,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className={`shrink-0 flex items-center pt-5 pb-3 ${sidebarCollapsed ? 'justify-center px-2' : 'justify-between px-4'}`}>
             <Link href="/" className="flex items-center hover:opacity-85 transition-opacity">
               {sidebarCollapsed
-                ? <img src="/logo-icon.webp" alt="EL-PIM" className="h-7 w-7 object-contain" />
-                : <img src="/logo-white.webp" alt="EL-PIM" className="h-6 w-auto" />}
+                ? <span className="text-white font-black text-sm tracking-tight">EL</span>
+                : <span className="text-white font-black text-lg tracking-tight">EL-PIM</span>}
             </Link>
             {!sidebarCollapsed && (
               <button
