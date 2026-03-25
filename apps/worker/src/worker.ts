@@ -2993,10 +2993,11 @@ Regler for output:
 PRODUKTER (brug disse data til produktspecifik generering):
 ${productLines}`;
 
+        // Skip batch path for single-product batches — use individual path directly for better quality
         let batchResults: string[] | null = null;
         let batchPromptPerProduct = 0;
         let batchCompletionPerProduct = 0;
-        try {
+        if (toProcess.length > 1) try {
           const aiResult = await callOpenAi(openAiApiKey, batchPrompt, { webSearchEnabled: false });
           campaignTokensInput += aiResult.usage.promptTokens;
           campaignTokensOutput += aiResult.usage.completionTokens;
