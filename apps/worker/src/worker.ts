@@ -2985,10 +2985,10 @@ Regler for output:
 - Ingen forklaringer, ingen nøgler, kun arrayet.
 - Hvert array-element skal omhandle det specifikke produkts egne egenskaber, specifikationer og fordele.
 - Kildedata (KILDEDATA-sektioner) bruges som faktabasis for produktspecifikke oplysninger — generer ikke indhold om logistik, leveringstider, priser eller generel webshop-service medmindre det er eksplicit anmodet i instruktionen.
-- Skriv ALDRIG i spørgsmål-svar format, FAQ-format eller dialogformat. Al tekst skal være løbende, brugerfacing produktindhold.
 - Medtag ALDRIG salgspriser, stykpriser, rabatter, lagerantal, lagerstatus eller leveringstider i outputtet — disse oplysninger ændrer sig og hører ikke til i produktteksten.
 - Nævn ALDRIG webshoppens navn, webshop-specifikke services, domænenavne eller leveringsgarantier i produktteksterne.
-- Hvis der ikke er tilstrækkelige data til at generere meningsfuldt indhold for et produkt, returnér præcis strengen "__SKIP__" (uden anførselstegn i JSON-array-elementet, dvs. "__SKIP__") for det pågældende produkt.${formatInstruction}${sourcesOnlyInstruction}${effectiveLengthInstruction}
+- Følg Instruktionsformat præcist — outputformatet (HTML, FAQ, løbende tekst osv.) er bestemt af instruktionen, ikke af disse regler.
+- Returnér kun "__SKIP__" hvis produktet bogstaveligt talt ingen brugbar information har overhovedet (ingen titel, ingen leverandør, ingen produkttype og ingen kildedata).${formatInstruction}${sourcesOnlyInstruction}${effectiveLengthInstruction}
 
 PRODUKTER (brug disse data til produktspecifik generering):
 ${productLines}`;
@@ -3049,7 +3049,7 @@ ${productLines}`;
               const fallbackFormatInstruction = outputIsHtml
                 ? '\n\nVIGTIGT: Generer HTML med passende tags (<p>, <ul>, <li>, <strong> osv.).'
                 : '\n\nVIGTIGT: Returnér UDELUKKENDE ren tekst. Brug IKKE HTML-tags, markdown eller anden formatering.';
-              const fallbackContentRules = '\n\nINDHOLDSREGLER: Skriv ALDRIG i spørgsmål-svar format eller FAQ-format. Medtag ALDRIG salgspriser, lagerantal, lagerstatus eller leveringstider. Nævn ALDRIG webshoppens navn eller webshop-specifikke services i produktteksten. Hvis der ikke er tilstrækkelige data til at generere meningsfuldt indhold, returnér præcis strengen "__SKIP__".';
+              const fallbackContentRules = '\n\nINDHOLDSREGLER: Medtag ALDRIG salgspriser, lagerantal, lagerstatus eller leveringstider. Nævn ALDRIG webshoppens navn eller webshop-specifikke services i produktteksten. Følg promptens format præcist (HTML, FAQ, løbende tekst osv.). Returnér kun strengen "__SKIP__" hvis produktet bogstaveligt talt ingen brugbar information har overhovedet (ingen titel, ingen leverandør, ingen produkttype og ingen kildedata).';
               const finalPrompt = `${masterPrompt}${shopIntroContext}\n\n${rendered}${supplierContext}${sourcesOnlyInstruction}${fallbackFormatInstruction}${fallbackContentRules}${effectiveLengthInstruction}`;
               const res = await callOpenAi(openAiApiKey, finalPrompt, { webSearchEnabled: false });
               campaignTokensInput += res.usage.promptTokens;
