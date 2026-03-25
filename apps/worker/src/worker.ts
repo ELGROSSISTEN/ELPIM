@@ -3046,11 +3046,15 @@ ${productLines}`;
               }
               const allVariables = { ...(variables ?? {}), ...supplierVars };
               const rendered = renderPrompt(promptTemplate, allVariables);
+              // For HTML fields the prompt template fully controls format and length —
+              // appending generic HTML-tag or length instructions causes the AI to generate
+              // extra prose to satisfy them (e.g. a product description preamble before a FAQ).
               const fallbackFormatInstruction = outputIsHtml
-                ? '\n\nVIGTIGT: Generer HTML med passende tags (<p>, <ul>, <li>, <strong> osv.).'
+                ? ''
                 : '\n\nVIGTIGT: Returnér UDELUKKENDE ren tekst. Brug IKKE HTML-tags, markdown eller anden formatering.';
-              const fallbackContentRules = '\n\nINDHOLDSREGLER: Medtag ALDRIG salgspriser, lagerantal, lagerstatus eller leveringstider. Nævn ALDRIG webshoppens navn eller webshop-specifikke services i produktteksten. Følg promptens format præcist (HTML, FAQ, løbende tekst osv.). Returnér kun strengen "__SKIP__" hvis produktet bogstaveligt talt ingen brugbar information har overhovedet (ingen titel, ingen leverandør, ingen produkttype og ingen kildedata).';
-              const finalPrompt = `${masterPrompt}${shopIntroContext}\n\n${rendered}${supplierContext}${sourcesOnlyInstruction}${fallbackFormatInstruction}${fallbackContentRules}${effectiveLengthInstruction}`;
+              const fallbackLengthInstruction = outputIsHtml ? '' : effectiveLengthInstruction;
+              const fallbackContentRules = '\n\nINDHOLDSREGLER: Medtag ALDRIG salgspriser, lagerantal, lagerstatus eller leveringstider. Nævn ALDRIG webshoppens navn eller webshop-specifikke services i produktteksten. Returnér kun strengen "__SKIP__" hvis produktet bogstaveligt talt ingen brugbar information har overhovedet (ingen titel, ingen leverandør, ingen produkttype og ingen kildedata).';
+              const finalPrompt = `${masterPrompt}${shopIntroContext}\n\n${rendered}${supplierContext}${sourcesOnlyInstruction}${fallbackFormatInstruction}${fallbackContentRules}${fallbackLengthInstruction}`;
               const res = await callOpenAi(openAiApiKey, finalPrompt, { webSearchEnabled: false });
               campaignTokensInput += res.usage.promptTokens;
               campaignTokensOutput += res.usage.completionTokens;
