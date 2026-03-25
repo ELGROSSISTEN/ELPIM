@@ -3061,14 +3061,27 @@ ${productLines}`;
               }
               const allVariables = { ...(variables ?? {}), ...supplierVars };
               const rendered = renderPrompt(promptTemplate, allVariables);
+              // Always inject basic product identity so AI knows what product to write about,
+              // even when the prompt template has no {{placeholder}} substitutions and there
+              // are no source rows (e.g. FAQ prompt = "Generér relevante FAQ-spørgsmål...").
+              const vars = (variables ?? {}) as Record<string, string>;
+              const productContextLines = [
+                vars.title ? `  titel: ${vars.title}` : '',
+                vars.vendor ? `  leverandør: ${vars.vendor}` : '',
+                vars.productType ? `  produkttype: ${vars.productType}` : '',
+                vars.barcode ? `  ean: ${vars.barcode}` : '',
+                vars.sku ? `  sku: ${vars.sku}` : '',
+                vars.collections ? `  kollektioner: ${vars.collections}` : '',
+              ].filter(Boolean).join('\n');
+              const productContextBlock = productContextLines
+                ? `\n\nPRODUKT:\n${productContextLines}`
+                : '';
               // Mirror the /products/[id] individual AI worker prompt exactly:
-              // masterPrompt → shopIntroContext → rendered prompt → supplier data → text-only constraint
-              // No extra rules or length instructions after the rendered prompt — they conflict with
-              // field-specific format instructions (e.g. FAQ HTML structure).
+              // masterPrompt → shopIntroContext → rendered prompt → product identity → supplier data → text-only constraint
               const noHtmlInstruction = outputIsHtml
                 ? ''
                 : '\n\nVIGTIGT: Returnér UDELUKKENDE ren tekst. Brug IKKE HTML-tags, markdown eller anden formatering.';
-              const finalPrompt = `${masterPrompt}${shopIntroContext}\n\n${rendered}${supplierContext}${sourcesOnlyInstruction}${noHtmlInstruction}`;
+              const finalPrompt = `${masterPrompt}${shopIntroContext}\n\n${rendered}${productContextBlock}${supplierContext}${sourcesOnlyInstruction}${noHtmlInstruction}`;
               const res = await callOpenAi(openAiApiKey, finalPrompt, { webSearchEnabled: false });
               campaignTokensInput += res.usage.promptTokens;
               campaignTokensOutput += res.usage.completionTokens;
