@@ -3077,11 +3077,14 @@ ${productLines}`;
                 ? `\n\nPRODUKT:\n${productContextLines}`
                 : '';
               // Mirror the /products/[id] individual AI worker prompt exactly:
-              // masterPrompt → shopIntroContext → rendered prompt → product identity → supplier data → text-only constraint
-              const noHtmlInstruction = outputIsHtml
-                ? ''
+              // masterPrompt → shopIntroContext → rendered prompt → product identity → supplier data → format reminder
+              // For HTML fields: remind AI to use the exact HTML format from the rendered prompt and start directly
+              // with the first HTML element — prevents preamble descriptions before FAQ/HTML output.
+              // For plain-text fields: forbid HTML/markdown.
+              const outputFormatInstruction = outputIsHtml
+                ? '\n\nVIGTIGT: Returner output i præcist det HTML-format der er specificeret i instrukserne ovenfor. Start DIREKTE med det første HTML-tag — skriv INGEN indledning, INGEN produktbeskrivelse og INGEN præambel.'
                 : '\n\nVIGTIGT: Returnér UDELUKKENDE ren tekst. Brug IKKE HTML-tags, markdown eller anden formatering.';
-              const finalPrompt = `${masterPrompt}${shopIntroContext}\n\n${rendered}${productContextBlock}${supplierContext}${sourcesOnlyInstruction}${noHtmlInstruction}`;
+              const finalPrompt = `${masterPrompt}${shopIntroContext}\n\n${rendered}${productContextBlock}${supplierContext}${sourcesOnlyInstruction}${outputFormatInstruction}`;
               const res = await callOpenAi(openAiApiKey, finalPrompt, { webSearchEnabled: false });
               campaignTokensInput += res.usage.promptTokens;
               campaignTokensOutput += res.usage.completionTokens;
