@@ -734,7 +734,7 @@ const callOpenAi = async (
 
   const json = (await response.json()) as {
     output_text?: string;
-    output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
+    output?: Array<{ type?: string; content?: Array<{ type?: string; text?: string; refusal?: string }> }>;
     usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
   };
 
@@ -748,17 +748,23 @@ const callOpenAi = async (
     return { text: json.output_text.trim(), usage };
   }
 
-  const textFromOutput =
-    json.output
-      ?.flatMap((item) => item.content ?? [])
-      .find((content) => content.type === 'output_text' && content.text)
-      ?.text ?? '';
+  const allContent = json.output?.flatMap((item) => item.content ?? []) ?? [];
 
-  if (!textFromOutput.trim()) {
-    throw new Error('OpenAI response had no text output');
+  const textFromOutput = allContent.find((c) => c.type === 'output_text' && c.text)?.text ?? '';
+  if (textFromOutput.trim()) {
+    return { text: textFromOutput.trim(), usage };
   }
 
-  return { text: textFromOutput.trim(), usage };
+  // Model returned a refusal instead of text — log it and throw a descriptive error
+  const refusal = allContent.find((c) => c.type === 'refusal')?.refusal ?? '';
+  if (refusal) {
+    logger.warn({ refusal, model: env.OPENAI_MODEL }, 'OpenAI returned a refusal response');
+    throw new Error(`OpenAI refusal: ${refusal.slice(0, 200)}`);
+  }
+
+  // Nothing usable in the response — log the raw structure for diagnosis
+  logger.warn({ outputKeys: Object.keys(json), outputLength: json.output?.length ?? 0 }, 'OpenAI response had no text output');
+  throw new Error('OpenAI response had no text output');
 };
 
 const sendBulkDoneEmail = async (to: string, subject: string, html: string): Promise<void> => {
@@ -2895,6 +2901,15 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
         for (let i = 0; i < enriched.length; i++) {
           const e = enriched[i]!;
           if (!e.product) continue;
+          // On retry: if this field already failed on a previous attempt, skip it
+          // to avoid infinite retry loops for persistently failing fields.
+          const prevFieldState = ((e.item.fieldsDoneJson ?? {}) as Record<string, string>)[fd.id];
+          if (prevFieldState === 'failed') {
+            const fieldsDone = (e.item.fieldsDoneJson ?? {}) as Record<string, string>;
+            fieldsDone[fd.id] = 'skipped';
+            await (prisma as any).runCampaignItem.update({ where: { id: e.item.id }, data: { fieldsDoneJson: fieldsDone } });
+            continue;
+          }
           if (!overwrite.includes(fd.id)) {
             let hasExisting = false;
             if (fd.id.startsWith('__')) {
