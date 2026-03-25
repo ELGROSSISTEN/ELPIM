@@ -11,7 +11,7 @@ type PromptTemplate = { id: string; name: string; body: string; category: string
 
 type Campaign = {
   id: string; name: string; status: string;
-  fieldsJson: string[]; batchSize: number; concurrency: number;
+  fieldsJson: string[]; batchSize: number;
   collectionsFirst: boolean; excludeSkusJson: string[]; overwriteJson: string[];
   totalItems: number; doneItems: number; failedItems: number; skippedItems: number;
   tokensUsed: number; costUsd: string; autoSync: boolean; outputLength: string;
@@ -159,8 +159,7 @@ export default function RunPage() {
   const [newSourceIds, setNewSourceIds] = useState<string[]>([]);
   const [newSourcesOnly, setNewSourcesOnly] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [newBatchSize, setNewBatchSize] = useState(50);
-  const [newConcurrency, setNewConcurrency] = useState(5);
+  const [newBatchSize, setNewBatchSize] = useState(1);
   const [newCollectionsFirst, setNewCollectionsFirst] = useState(true);
   const [newExcludeSkus, setNewExcludeSkus] = useState('');
   const [newAutoSync, setNewAutoSync] = useState(false);
@@ -271,7 +270,6 @@ export default function RunPage() {
           name,
           fieldsJson: newFields,
           batchSize: newBatchSize,
-          concurrency: newConcurrency,
           collectionsFirst: newCollectionsFirst,
           excludeSkusJson: excludeSkus,
           overwriteJson: newFields, // always overwrite all selected fields
@@ -661,12 +659,7 @@ export default function RunPage() {
                     <label className="text-sm">
                       <span className="font-medium text-slate-700 block mb-1">Batch-størrelse</span>
                       <input className="ep-input" type="number" min={1} max={200} value={newBatchSize} onChange={(e) => setNewBatchSize(Number(e.target.value))} />
-                      <span className="text-xs text-slate-400">Produkter pr. AI-kald (standard: 50)</span>
-                    </label>
-                    <label className="text-sm">
-                      <span className="font-medium text-slate-700 block mb-1">Parallelitet</span>
-                      <input className="ep-input" type="number" min={1} max={10} value={newConcurrency} onChange={(e) => setNewConcurrency(Number(e.target.value))} />
-                      <span className="text-xs text-slate-400">Samtidige processer (standard: 5)</span>
+                      <span className="text-xs text-slate-400">Produkter pr. AI-kald (standard: 1)</span>
                     </label>
                   </div>
                   <label className="flex items-center gap-2 text-sm cursor-pointer">

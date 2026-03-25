@@ -242,11 +242,8 @@ const adminNavItems: NavItem[] = [
   { href: '/settings/platform', label: 'Platform', icon: <IconPlatform /> },
   { href: '/settings/billing-ops', label: 'Billing Ops', icon: <IconBilling /> },
   { href: '/admin/shops', label: 'Webshops', icon: <IconShop /> },
-  { href: '/admin/users', label: 'Brugere', icon: <IconUsers /> },
-  { href: '/admin/organizations', label: 'Organisationer', icon: <IconOrganization /> },
-  { href: '/admin/agencies', label: 'Partnere', icon: <IconAgency /> },
-  { href: '/admin/referrals', label: 'Provisioner', icon: <IconReferral /> },
 ];
+
 
 const isActive = (pathname: string, href: string): boolean => {
   if (href === '/') {

@@ -10145,7 +10145,7 @@ app.get('/run-campaigns', async (request: any, reply: any) => {
     orderBy: { createdAt: 'desc' },
     select: {
       id: true, name: true, status: true, fieldsJson: true,
-      batchSize: true, concurrency: true, collectionsFirst: true,
+      batchSize: true, collectionsFirst: true,
       excludeSkusJson: true, overwriteJson: true,
       totalItems: true, doneItems: true, failedItems: true, skippedItems: true,
       startedAt: true, completedAt: true, createdAt: true, updatedAt: true,
@@ -10165,7 +10165,6 @@ app.post('/run-campaigns', async (request: any, reply: any) => {
     name?: string;
     fieldsJson?: string[];
     batchSize?: number;
-    concurrency?: number;
     collectionsFirst?: boolean;
     excludeSkusJson?: string[];
     overwriteJson?: string[];
@@ -10184,8 +10183,7 @@ app.post('/run-campaigns', async (request: any, reply: any) => {
       shopId,
       name: body.name.trim(),
       fieldsJson: body.fieldsJson,
-      batchSize: body.batchSize ?? 50,
-      concurrency: body.concurrency ?? 5,
+      batchSize: body.batchSize ?? 1,
       collectionsFirst: body.collectionsFirst ?? true,
       excludeSkusJson: body.excludeSkusJson ?? [],
       overwriteJson: body.overwriteJson ?? [],

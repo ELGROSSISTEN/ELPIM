@@ -870,8 +870,7 @@ model RunCampaign {
   name             String
   status           String   @default("draft") // draft | running | paused | done | failed
   fieldsJson       Json     // string[] — fieldDefinitionIds to process
-  batchSize        Int      @default(50)
-  concurrency      Int      @default(5)
+  batchSize        Int      @default(1)
   collectionsFirst Boolean  @default(true)
   excludeSkusJson  Json     @default("[]") // string[]
   overwriteJson    Json     @default("[]") // string[] — fieldDefIds where we overwrite existing values
