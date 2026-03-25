@@ -14,7 +14,7 @@ type Campaign = {
   fieldsJson: string[]; batchSize: number; concurrency: number;
   collectionsFirst: boolean; excludeSkusJson: string[]; overwriteJson: string[];
   totalItems: number; doneItems: number; failedItems: number; skippedItems: number;
-  tokensUsed: number; costUsd: string; autoSync: boolean;
+  tokensUsed: number; costUsd: string; autoSync: boolean; outputLength: string;
   startedAt: string | null; completedAt: string | null; createdAt: string;
 };
 
@@ -164,6 +164,7 @@ export default function RunPage() {
   const [newCollectionsFirst, setNewCollectionsFirst] = useState(true);
   const [newExcludeSkus, setNewExcludeSkus] = useState('');
   const [newAutoSync, setNewAutoSync] = useState(false);
+  const [newOutputLength, setNewOutputLength] = useState<'kort' | 'mellem' | 'lang'>('mellem');
 
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
 
@@ -278,6 +279,7 @@ export default function RunPage() {
           sourcesOnly: newSourcesOnly,
           promptsJson: newPromptsJson,
           autoSync: newAutoSync,
+          outputLength: newOutputLength,
         }),
       });
       const campaign = res.campaign;
@@ -290,7 +292,7 @@ export default function RunPage() {
       setStatusMsg(`Klar: ${popRes.total.toLocaleString('da-DK')} produkter indlæst`);
 
       setShowCreate(false);
-      setNewName(''); setNewFields([]); setNewPromptsJson({}); setNewScope(10); setNewSourceIds([]); setNewSourcesOnly(false); setNewAutoSync(false);
+      setNewName(''); setNewFields([]); setNewPromptsJson({}); setNewScope(10); setNewSourceIds([]); setNewSourcesOnly(false); setNewAutoSync(false); setNewOutputLength('mellem');
       await loadCampaigns();
       setSelectedId(campaign.id);
     } catch (err) {
@@ -684,6 +686,32 @@ export default function RunPage() {
                   </label>
                 </div>
               )}
+            </div>
+
+            {/* Output length */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">Tekstlængde</label>
+              <div className="flex gap-2">
+                {(['kort', 'mellem', 'lang'] as const).map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setNewOutputLength(opt)}
+                    className={`px-4 py-1.5 rounded-md text-sm font-medium border transition-colors ${
+                      newOutputLength === opt
+                        ? 'bg-indigo-600 text-white border-indigo-600'
+                        : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-400'
+                    }`}
+                  >
+                    {opt.charAt(0).toUpperCase() + opt.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                {newOutputLength === 'kort' && 'Kompakt og præcis — ca. 75-150 ord pr. felt.'}
+                {newOutputLength === 'mellem' && 'Velbalanceret — ca. 150-250 ord pr. felt (standard).'}
+                {newOutputLength === 'lang' && 'Fyldestgørende og detaljeret — 300-600+ ord pr. felt.'}
+              </p>
             </div>
 
             {/* Auto-sync toggle */}

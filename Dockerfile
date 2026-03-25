@@ -24,6 +24,9 @@ RUN pnpm install --frozen-lockfile
 FROM base AS build
 COPY . .
 RUN pnpm --filter @epim/db exec prisma generate
+# Expose NEXT_PUBLIC_* vars at build time so Next.js bakes the correct API URL in
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 RUN pnpm run build
 
 # ── Prune: create deploy-ready node_modules per service ─────
@@ -47,7 +50,7 @@ ENV NODE_ENV=production
 EXPOSE 4000
 
 # Run migrations then start
-CMD ["sh", "-c", "npx prisma migrate deploy --schema ./prisma/schema.prisma && node dist/server.js"]
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy --schema ./prisma/schema.prisma && node dist/server.js"]
 
 # ── Worker service ──────────────────────────────────────────
 FROM node:20-slim AS worker

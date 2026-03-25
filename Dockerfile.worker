@@ -1,3 +1,4 @@
+# ── Base ────────────────────────────────────────────────────
 FROM node:20-slim AS base
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 RUN apt-get update -qq && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
@@ -14,21 +15,20 @@ COPY apps/web/package.json apps/web/
 
 RUN pnpm install --frozen-lockfile
 
+# ── Build ───────────────────────────────────────────────────
+FROM base AS build
 COPY . .
 RUN pnpm --filter @epim/db exec prisma generate
 RUN pnpm run build
-RUN pnpm --filter @epim/worker --prod deploy /deploy/worker
-# Copy generated prisma client into deploy output
-RUN PRISMA_SRC=$(find /app/node_modules/.pnpm -path '*/@prisma+client@*/node_modules/.prisma' -type d | head -1) && \
-    PRISMA_DST=$(find /deploy/worker/node_modules/.pnpm -path '*/@prisma+client@*/node_modules' -type d | head -1) && \
-    cp -r "$PRISMA_SRC" "$PRISMA_DST/"
 
+# ── Worker (final stage) ────────────────────────────────────
+# Skip pnpm deploy --prod to preserve the generated Prisma client
 FROM node:20-slim
 RUN apt-get update -qq && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
-COPY --from=base /deploy/worker .
+COPY --from=build /app .
 
 ENV NODE_ENV=production
 
-CMD ["node", "dist/worker.js"]
+CMD ["node", "apps/worker/dist/worker.js"]

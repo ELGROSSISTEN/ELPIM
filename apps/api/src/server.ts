@@ -3892,7 +3892,7 @@ app.post('/shops/sync-products', async (request: any, reply: any) => {
       while (hasNextPage) {
         const syncResponse: SyncProductsResponse = await client.execute<SyncProductsResponse>(
       `query SyncProducts($after: String) {
-        products(first: 250, after: $after, sortKey: CREATED_AT, reverse: true) {
+        products(first: 250, after: $after, sortKey: CREATED_AT, reverse: false) {
           edges {
             cursor
             node {
@@ -10173,6 +10173,7 @@ app.post('/run-campaigns', async (request: any, reply: any) => {
     sourcesOnly?: boolean;
     promptsJson?: Record<string, string>;
     autoSync?: boolean;
+    outputLength?: string;
   };
 
   if (!body.name?.trim()) return reply.code(400).send({ error: 'name er påkrævet' });
@@ -10192,7 +10193,8 @@ app.post('/run-campaigns', async (request: any, reply: any) => {
       sourcesOnly: body.sourcesOnly ?? false,
       promptsJson: body.promptsJson ?? {},
       autoSync: body.autoSync ?? false,
-    },
+      outputLength: body.outputLength ?? 'mellem',
+    } as any,
   });
   return reply.code(201).send({ campaign });
 });
@@ -10276,51 +10278,55 @@ app.post('/run-campaigns/:id/populate', async (request: any, reply: any) => {
 
   const excludeSkus = (campaign.excludeSkusJson as string[]) ?? [];
 
-  // Products with at least one collection — sorted by collection then product
-  const withCollections = await prisma.product.findMany({
-    where: {
-      shopId,
-      shopifyDeletedAt: null,
-      ...(excludeSkus.length > 0 ? {
-        NOT: { variants: { some: { sku: { in: excludeSkus } } } },
-      } : {}),
-      collections: { some: {} },
-    },
+  // Fetch all products with their first collection — used for round-robin interleaving
+  const productFilter = {
+    shopId,
+    shopifyDeletedAt: null,
+    ...(excludeSkus.length > 0 ? {
+      NOT: { variants: { some: { sku: { in: excludeSkus } } } },
+    } : {}),
+  };
+
+  const allFetched = await prisma.product.findMany({
+    where: productFilter,
     orderBy: [{ handle: 'asc' }],
     select: {
       id: true, title: true,
       variants: { take: 1, select: { sku: true, barcode: true } },
+      collections: { take: 1, select: { collectionId: true } },
     },
-    ...(limit > 0 ? { take: limit } : {}),
   });
 
-  const remainingLimit = limit > 0 ? limit - withCollections.length : 0;
+  // Round-robin interleave by collection so a small test batch covers many categories.
+  // Products with no collection go at the end.
+  const byCollection = new Map<string, typeof allFetched>();
+  const noCollection: typeof allFetched = [];
+  for (const p of allFetched) {
+    const colId = p.collections[0]?.collectionId ?? null;
+    if (!colId) { noCollection.push(p); continue; }
+    if (!byCollection.has(colId)) byCollection.set(colId, []);
+    byCollection.get(colId)!.push(p);
+  }
+  const buckets = Array.from(byCollection.values());
+  const interleaved: typeof allFetched = [];
+  let round = 0;
+  while (interleaved.length < allFetched.length - noCollection.length) {
+    for (const bucket of buckets) {
+      if (round < bucket.length) interleaved.push(bucket[round]!);
+    }
+    round++;
+  }
+  const allProducts = campaign.collectionsFirst
+    ? [...interleaved, ...noCollection]
+    : allFetched;
 
-  // Products without any collection (only if limit not yet reached)
-  const withoutCollections = campaign.collectionsFirst && remainingLimit !== 0 ? await prisma.product.findMany({
-    where: {
-      shopId,
-      shopifyDeletedAt: null,
-      ...(excludeSkus.length > 0 ? {
-        NOT: { variants: { some: { sku: { in: excludeSkus } } } },
-      } : {}),
-      collections: { none: {} },
-    },
-    orderBy: [{ handle: 'asc' }],
-    select: {
-      id: true, title: true,
-      variants: { take: 1, select: { sku: true, barcode: true } },
-    },
-    ...(limit > 0 && remainingLimit > 0 ? { take: remainingLimit } : {}),
-  }) : [];
+  const limited = limit > 0 ? allProducts.slice(0, limit) : allProducts;
 
-  const allProducts = [...withCollections, ...withoutCollections];
-
-  // Upsert items with sortOrder
-  const upserts = allProducts.map((p, i) =>
+  // Upsert items with sortOrder reflecting the interleaved collection order
+  const upserts = limited.map((p, i) =>
     prisma.runCampaignItem.upsert({
       where: { campaignId_productId: { campaignId: id, productId: p.id } },
-      update: {},
+      update: { sortOrder: i },
       create: {
         campaignId: id,
         productId: p.id,
@@ -10340,11 +10346,11 @@ app.post('/run-campaigns/:id/populate', async (request: any, reply: any) => {
   await prisma.runCampaignLog.create({
     data: {
       campaignId: id, level: 'info',
-      message: `Kampagne populeret med ${total} produkter (${withCollections.length} med kollektioner, ${withoutCollections.length} uden).`,
+      message: `Kampagne populeret med ${total} produkter fordelt på ${byCollection.size} kollektioner (round-robin rækkefølge) + ${noCollection.length} uden kollektion.`,
     },
   });
 
-  return { total, withCollections: withCollections.length, withoutCollections: withoutCollections.length };
+  return { total, withCollections: interleaved.length, withoutCollections: noCollection.length };
 });
 
 // POST /run-campaigns/:id/start — start or resume processing

@@ -879,6 +879,7 @@ model RunCampaign {
   sourcesOnly      Boolean  @default(false)
   promptsJson      Json     @default("{}") // { fieldId: promptTemplateId }
   autoSync         Boolean  @default(false)
+  outputLength     String   @default("mellem") // kort | mellem | lang
   totalItems       Int      @default(0)
   doneItems        Int      @default(0)
   failedItems      Int      @default(0)

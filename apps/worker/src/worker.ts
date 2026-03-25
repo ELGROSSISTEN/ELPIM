@@ -2588,10 +2588,40 @@ const runCampaignQueue = new Queue<RunCampaignJobRef>('run-campaign', { connecti
 
 // System fields that live on the Product record itself (not in FieldValue)
 const RC_SYSTEM_FIELDS = [
-  { id: '__title',           label: 'Titel',                    type: 'text', defaultPrompt: 'Generer en præcis og SEO-venlig produkttitel. Returnér kun titlen som ren tekst.' },
-  { id: '__description',     label: 'Beskrivelse',              type: 'html', defaultPrompt: 'Generer en overbevisende produktbeskrivelse som HTML (brug <p>, <ul>, <li> osv.).' },
-  { id: '__seo_title',       label: 'Meta titel (SEO)',         type: 'text', defaultPrompt: 'Generer en SEO meta-titel. Max 60 tegn. Returnér kun titlen som ren tekst.' },
-  { id: '__seo_description', label: 'Meta beskrivelse (SEO)',   type: 'text', defaultPrompt: 'Generer en SEO meta-beskrivelse. Max 160 tegn. Returnér kun beskrivelsen som ren tekst.' },
+  {
+    id: '__title', label: 'Titel', type: 'text',
+    defaultPrompt:
+      'Skriv en præcis, SEO-venlig produkttitel på dansk for: {{title}} ({{productType}}) fra {{vendor}}.\n' +
+      'Titlen skal være klar og beskrivende. Returnér KUN titlen som ren tekst. Ingen HTML. Ingen forklaring.',
+  },
+  {
+    id: '__description', label: 'Beskrivelse', type: 'html',
+    defaultPrompt:
+      'Skriv en professionel, detaljeret produktbeskrivelse på dansk for: {{title}} ({{productType}}) fra {{vendor}}.\n' +
+      'Kollektioner/kategorier: {{collections}}\n\n' +
+      'Brug velstruktureret HTML:\n' +
+      '- <p> til introduktion og afsnit\n' +
+      '- <h3> til sektionsoverskrifter\n' +
+      '- <ul><li> til funktioner, fordele og specifikationer\n' +
+      '- <strong> til fremhævning af nøgleord og vigtige egenskaber\n\n' +
+      'Struktur: Overbevisende intro → Nøglefunktioner og fordele → Tekniske specifikationer → Brugsscenarier/målgruppe.\n' +
+      'Inkluder alle tilgængelige tekniske data og kildedata i beskrivelsen.\n' +
+      'Returnér KUN HTML-koden. Ingen markdown. Ingen forklaring. Ingen code fences.',
+  },
+  {
+    id: '__seo_title', label: 'Meta titel (SEO)', type: 'text',
+    defaultPrompt:
+      'Skriv en SEO-optimeret metatitel på dansk for: {{title}} fra {{vendor}}.\n' +
+      'Max 60 tegn. Inkluder produktnavnet og vigtigste søgeord naturligt.\n' +
+      'Returnér KUN titlen som ren tekst. Ingen HTML. Ingen forklaring.',
+  },
+  {
+    id: '__seo_description', label: 'Meta beskrivelse (SEO)', type: 'text',
+    defaultPrompt:
+      'Skriv en SEO-optimeret metabeskrivelse på dansk for: {{title}} fra {{vendor}}.\n' +
+      'Max 155 tegn. Fremhæv produktets vigtigste fordel og afslut med et call-to-action.\n' +
+      'Returnér KUN teksten som ren tekst. Ingen HTML. Ingen forklaring.',
+  },
 ] as const;
 
 function getSystemFieldCurrentValue(product: { title: string; descriptionHtml?: string | null; seoJson: unknown }, fieldId: string): string | null {
@@ -2667,6 +2697,14 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
       return;
     }
     const openAiApiKey = decryptSecret(encryptedPlatformKey, env.MASTER_ENCRYPTION_KEY);
+
+    // Output length instruction — injected into every prompt so the AI knows the desired scope
+    const outputLengthStr = ((campaign as any).outputLength as string) ?? 'mellem';
+    const lengthInstruction = outputLengthStr === 'kort'
+      ? '\n\nLÆNGDE: Kompakt og præcis. Fokuser på de vigtigste punkter. Undgå gentagelser. Ca. 75-150 ord.'
+      : outputLengthStr === 'lang'
+      ? '\n\nLÆNGDE: Fyldestgørende og detaljeret. Dæk alle relevante aspekter grundigt med eksempler og forklaringer. 300-600+ ord.'
+      : '\n\nLÆNGDE: Velbalanceret. Dæk alle vigtige aspekter og inkluder relevante detaljer. Ca. 150-250 ord.';
 
     // Load prompt templates for each field — use per-field selection from promptsJson, fall back to default
     // NOTE: System fields (__description, etc.) do NOT use the shop's default template unless explicitly chosen,
@@ -2846,6 +2884,10 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
         await checkDailyAiSpendCap(campaign.shopId);
 
         const outputIsHtml = fd.type === 'html';
+        // Only inject length instruction for description/HTML fields and custom fields.
+        // Title and SEO fields have fixed character limits in their prompts — don't override.
+        const fixedLengthField = fd.id === '__title' || fd.id === '__seo_title' || fd.id === '__seo_description';
+        const effectiveLengthInstruction = fixedLengthField ? '' : lengthInstruction;
         const promptTemplate = promptsByField[fd.id] ?? `Generer ${fd.label}.`;
 
         // Skip products that already have a value (unless overwrite)
@@ -2922,7 +2964,7 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
           return lines + sourceSection;
         }).join('\n\n---\n\n');
 
-        const shopIntroContext = aiIntroduction.trim() ? `\n\nWEBSHOPPEN:\n${aiIntroduction.trim()}` : '';
+        const shopIntroContext = aiIntroduction.trim() ? `\n\nWEBSHOPPEN (baggrundsviden om butikken — bruges KUN som kontekst, nævn ALDRIG webshoppens navn, leveringsservice eller webshop-specifikke oplysninger direkte i produktteksterne):\n${aiIntroduction.trim()}` : '';
 
         // Use the raw prompt template here — do NOT renderPrompt with first product's variables.
         // Rendering with one product's data bakes that product's context into the instruction for ALL products,
@@ -2942,7 +2984,11 @@ Regler for output:
 - Format: ["indhold for produkt 1", "indhold for produkt 2", ...]
 - Ingen forklaringer, ingen nøgler, kun arrayet.
 - Hvert array-element skal omhandle det specifikke produkts egne egenskaber, specifikationer og fordele.
-- Kildedata (KILDEDATA-sektioner) bruges som faktabasis for produktspecifikke oplysninger — generer ikke indhold om logistik, leveringstider, priser eller generel webshop-service medmindre det er eksplicit anmodet i instruktionen.${formatInstruction}${sourcesOnlyInstruction}
+- Kildedata (KILDEDATA-sektioner) bruges som faktabasis for produktspecifikke oplysninger — generer ikke indhold om logistik, leveringstider, priser eller generel webshop-service medmindre det er eksplicit anmodet i instruktionen.
+- Skriv ALDRIG i spørgsmål-svar format, FAQ-format eller dialogformat. Al tekst skal være løbende, brugerfacing produktindhold.
+- Medtag ALDRIG salgspriser, stykpriser, rabatter, lagerantal, lagerstatus eller leveringstider i outputtet — disse oplysninger ændrer sig og hører ikke til i produktteksten.
+- Nævn ALDRIG webshoppens navn, webshop-specifikke services, domænenavne eller leveringsgarantier i produktteksterne.
+- Hvis der ikke er tilstrækkelige data til at generere meningsfuldt indhold for et produkt, returnér præcis strengen "__SKIP__" (uden anførselstegn i JSON-array-elementet, dvs. "__SKIP__") for det pågældende produkt.${formatInstruction}${sourcesOnlyInstruction}${effectiveLengthInstruction}
 
 PRODUKTER (brug disse data til produktspecifik generering):
 ${productLines}`;
@@ -3002,7 +3048,8 @@ ${productLines}`;
               const fallbackFormatInstruction = outputIsHtml
                 ? '\n\nVIGTIGT: Generer HTML med passende tags (<p>, <ul>, <li>, <strong> osv.).'
                 : '\n\nVIGTIGT: Returnér UDELUKKENDE ren tekst. Brug IKKE HTML-tags, markdown eller anden formatering.';
-              const finalPrompt = `${masterPrompt}${shopIntroContext}\n\n${rendered}${supplierContext}${sourcesOnlyInstruction}${fallbackFormatInstruction}`;
+              const fallbackContentRules = '\n\nINDHOLDSREGLER: Skriv ALDRIG i spørgsmål-svar format eller FAQ-format. Medtag ALDRIG salgspriser, lagerantal, lagerstatus eller leveringstider. Nævn ALDRIG webshoppens navn eller webshop-specifikke services i produktteksten. Hvis der ikke er tilstrækkelige data til at generere meningsfuldt indhold, returnér præcis strengen "__SKIP__".';
+              const finalPrompt = `${masterPrompt}${shopIntroContext}\n\n${rendered}${supplierContext}${sourcesOnlyInstruction}${fallbackFormatInstruction}${fallbackContentRules}${effectiveLengthInstruction}`;
               const res = await callOpenAi(openAiApiKey, finalPrompt, { webSearchEnabled: false });
               campaignTokensInput += res.usage.promptTokens;
               campaignTokensOutput += res.usage.completionTokens;
@@ -3019,6 +3066,15 @@ ${productLines}`;
           }
 
           if (outputIsHtml) suggested = stripMarkdownCodeFences(suggested);
+
+          // Detect sentinel — AI had insufficient data to generate meaningful content
+          if (suggested.trim() === '__SKIP__') {
+            await logCampaign(campaignId, 'warn', `Utilstrækkelige data til at generere "${fd.label}" for "${product!.title ?? item.sku ?? item.ean ?? item.id}" — feltet springes over (eksisterende værdi bevares).`, undefined, item.id);
+            const fieldsDone = (item.fieldsDoneJson ?? {}) as Record<string, string>;
+            fieldsDone[fd.id] = 'skipped';
+            await (prisma as any).runCampaignItem.update({ where: { id: item.id }, data: { fieldsDoneJson: fieldsDone } });
+            continue;
+          }
 
           if (fd.id.startsWith('__')) {
             await writeSystemField(product!.id, fd.id, suggested);
