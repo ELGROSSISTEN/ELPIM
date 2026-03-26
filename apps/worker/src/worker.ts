@@ -2772,7 +2772,7 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
         active: true,
         ...(selectedSourceIds.length > 0 ? { id: { in: selectedSourceIds } } : {}),
       },
-      select: { id: true, name: true, tagsJson: true, url: true, promptTemplate: true },
+      select: { id: true, name: true, tagsJson: true, url: true },
     });
 
     let processedTotal = 0;
@@ -2953,7 +2953,7 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
           ? '\n\nHTML FORMATERING AKTIVERET:\nStrukturér og opstil outputtet med semantisk HTML (fx <p>, <h2>, <ul>/<li>, <strong>). Brug HTML til at skabe overskuelighed og hierarki. Returnér kun HTML-koden uden wrapper-elementer.'
           : '';
         const sourcePreview = activeSources.length > 0
-          ? `\n\n--- DATAKILDER (injiceres ved generering) ---\n${(activeSources as Array<{ id: string; name: string; promptTemplate?: string | null }>).map((s) => `[${s.name}]: ${s.promptTemplate ?? 'Standard datakilde-prompt'}`).join('\n')}`
+          ? `\n\n--- DATAKILDER (injiceres ved generering) ---\n${activeSources.map((s) => `[${s.name}]: ${workerReadSourceMeta(s.tagsJson).promptTemplate ?? 'Standard datakilde-prompt'}`).join('\n')}`
           : '';
         const sourcesOnlyPreview = sourcesOnly && activeSources.length > 0
           ? '\n\nVIGTIGT — BRUG UDELUKKENDE KILDEDATA: Brug kun information fra kildedataene.'
