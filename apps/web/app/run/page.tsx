@@ -349,6 +349,19 @@ export default function RunPage() {
     }
   };
 
+  const discardAllDrafts = async (): Promise<void> => {
+    if (!confirm('Dette sletter alle kladder og alle AI-genererede feltværdier for hele shoppen. Handlingen kan ikke fortrydes. Fortsæt?')) return;
+    try {
+      setLoading(true);
+      const res = await apiFetch<{ ok: boolean; draftsDeleted: number; fieldValuesDeleted: number }>('/drafts/all', { method: 'DELETE' });
+      setStatusMsg(`Kasseret: ${res.draftsDeleted} kladder og ${res.fieldValuesDeleted} AI-feltværdier slettet`);
+    } catch (err) {
+      setStatusMsg(err instanceof Error ? err.message : 'Fejl ved kassering');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const syncCampaign = async (id: string): Promise<void> => {
     try {
       setSyncing(true);
@@ -394,6 +407,14 @@ export default function RunPage() {
           className="ep-btn-primary w-full py-2.5 text-sm font-medium"
         >
           + Ny kørsel
+        </button>
+
+        <button
+          onClick={discardAllDrafts}
+          disabled={loading}
+          className="w-full py-2 text-sm font-medium rounded-lg border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 hover:border-red-300 transition disabled:opacity-50"
+        >
+          Kassér alle AI-kladder
         </button>
 
         {/* Campaign list */}

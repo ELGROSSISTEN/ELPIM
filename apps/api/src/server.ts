@@ -7419,6 +7419,21 @@ app.delete('/drafts/:entityType/:entityId', async (request: any, reply) => {
   return { ok: true };
 });
 
+app.delete('/drafts/all', async (request: any, reply) => {
+  if (!(await withAuth(request, reply))) return;
+  const user = await getCurrentUser(request);
+  if (!user) return reply.code(401).send({ error: 'Session invalid. Please log in again.' });
+  const shopId = resolveActiveShopId(request, user);
+  if (!shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+
+  const draftsResult = await prisma.draft.deleteMany({ where: { shopId } });
+
+  const productIds = await prisma.product.findMany({ where: { shopId }, select: { id: true } }).then((ps) => ps.map((p) => p.id));
+  const fieldValuesResult = await prisma.fieldValue.deleteMany({ where: { source: 'ai', productId: { in: productIds } } });
+
+  return { ok: true, draftsDeleted: draftsResult.count, fieldValuesDeleted: fieldValuesResult.count };
+});
+
 // Commit a product draft and immediately queue a Shopify sync job
 app.post('/drafts/product/:productId/commit', async (request: any, reply) => {
   if (!(await withAuth(request, reply))) return;
