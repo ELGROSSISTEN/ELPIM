@@ -723,6 +723,9 @@ const callOpenAi = async (
     });
   };
 
+  // Transient error codes from OpenAI that are safe to retry
+  const isTransient = (status: number) => status === 500 || status === 502 || status === 503 || status === 529;
+
   let response = await executeRequest(Boolean(options?.webSearchEnabled));
 
   if (!response.ok && options?.webSearchEnabled) {
@@ -732,6 +735,24 @@ const callOpenAi = async (
     if (!response.ok) {
       const secondError = await response.text();
       throw new Error(`OpenAI request failed: ${response.status} ${secondError}`);
+    }
+  }
+
+  // Retry up to 3 times on transient OpenAI server errors with exponential backoff
+  if (!response.ok && isTransient(response.status)) {
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const errorText = await response.text();
+      const delayMs = attempt * 5000; // 5s, 10s, 15s
+      logger.warn({ status: response.status, attempt, delayMs }, `OpenAI transient error — retrying in ${delayMs / 1000}s`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      response = await executeRequest(Boolean(options?.webSearchEnabled));
+      if (response.ok || !isTransient(response.status)) break;
+      if (attempt === MAX_RETRIES) {
+        const finalError = await response.text();
+        throw new Error(`OpenAI request failed after ${MAX_RETRIES} retries: ${response.status} ${finalError}`);
+      }
+      void errorText; // consumed above for logging context
     }
   }
 
