@@ -204,7 +204,9 @@ Regler:
 3) Sæt kunden i centrum: hvad får de ud af det? Hvad løser produktet?
 4) Undgå generiske vendinger som "høj kvalitet", "fantastisk produkt", "perfekt til".
 5) Skriv konkret, præcist og letlæseligt.
-6) Returnér kun den endelige feltværdi — ingen forklaringer, ingen overskrifter, ingen præambel.`;
+6) Returnér kun den endelige feltværdi — ingen forklaringer, ingen overskrifter, ingen præambel.
+7) Nævn ALDRIG lagerstatus, lagerantal, leveringstider, fragtpriser, tilgængelighed eller ordrespecifikke oplysninger — disse ændrer sig og hører ikke hjemme i en produkttekst.
+8) Nævn ALDRIG webshoppens navn, webshop-specifikke services, rabatter, kampagner eller prisoplysninger direkte i produktteksterne.`;
 
 const workerReadSourceMeta = (tagsJson: unknown): WorkerSourceMeta => {
   if (tagsJson && typeof tagsJson === 'object' && !Array.isArray(tagsJson)) {
@@ -3062,11 +3064,19 @@ ${productLines}`;
           } else {
             // Individual fallback — exactly like the individual AI worker (single-product prompt)
             try {
-              // Build supplier context block (same format as individual AI worker)
+              // Build supplier context block — identical logic to /products/[id] individual AI worker,
+              // including respecting the source's custom promptTemplate if set.
+              // This ensures the campaign never includes data fields (e.g. stock, delivery) that the
+              // source's promptTemplate was designed to filter out.
               const supplierContext = allSourceRows.length > 0
-                ? allSourceRows.map(({ sourceName, rowData }: { sourceName: string; rowData: Record<string, unknown> }) => {
+                ? allSourceRows.map(({ sourceName, promptTemplate: srcPromptTemplate, rowData }: { sourceName: string; promptTemplate?: string; rowData: Record<string, unknown> }) => {
                     const dataLines = Object.entries(rowData).filter(([, v]) => String(v).trim()).map(([k, v]) => `  ${k}: ${v}`).join('\n');
                     const sourceData = `[${sourceName}]\n${dataLines}`;
+                    if (srcPromptTemplate) {
+                      return '\n\n' + srcPromptTemplate
+                        .replace(/\{\{\s*source_name\s*\}\}/g, sourceName)
+                        .replace(/\{\{\s*source_data\s*\}\}/g, sourceData);
+                    }
                     return `\n\nKILDEDATA fra "${sourceName}" (brug som faktabasis — reformulér med egne ord):\n${sourceData}`;
                   }).join('')
                 : '';
