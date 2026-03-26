@@ -2742,7 +2742,7 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
         active: true,
         ...(selectedSourceIds.length > 0 ? { id: { in: selectedSourceIds } } : {}),
       },
-      select: { id: true, name: true, tagsJson: true, url: true },
+      select: { id: true, name: true, tagsJson: true, url: true, promptTemplate: true },
     });
 
     let processedTotal = 0;
@@ -2915,7 +2915,17 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
         // Title and SEO fields have fixed character limits in their prompts — don't override.
         const fixedLengthField = fd.id === '__title' || fd.id === '__seo_title' || fd.id === '__seo_description';
         const effectiveLengthInstruction = fixedLengthField ? '' : lengthInstruction;
-        const promptTemplate = promptsByField[fd.id] ?? `Generer ${fd.label}.`;
+        // Build compiled prompt template identical to /products/[id] frontend assembly:
+        // FELT DU SKAL GENERERE TIL → SUPPLERENDE INSTRUKTION → ØNSKET LÆNGDE → HTML format → DATAKILDER preview.
+        // Without this wrapping, the AI lacks HTML format instructions, field-label context, and length guidance.
+        const rawPromptBody = promptsByField[fd.id] ?? `Generer ${fd.label}.`;
+        const htmlInstruction = outputIsHtml
+          ? '\n\nHTML FORMATERING AKTIVERET:\nStrukturér og opstil outputtet med semantisk HTML (fx <p>, <h2>, <ul>/<li>, <strong>). Brug HTML til at skabe overskuelighed og hierarki. Returnér kun HTML-koden uden wrapper-elementer.'
+          : '';
+        const sourcePreview = activeSources.length > 0
+          ? `\n\n--- DATAKILDER (injiceres ved generering) ---\n${(activeSources as Array<{ id: string; name: string; promptTemplate?: string | null }>).map((s) => `[${s.name}]: ${s.promptTemplate ?? 'Standard datakilde-prompt'}`).join('\n')}`
+          : '';
+        const promptTemplate = `FELT DU SKAL GENERERE TIL: ${fd.label}\n\nSUPPLERENDE INSTRUKTION:\n${rawPromptBody}${effectiveLengthInstruction}${htmlInstruction}${sourcePreview}`;
 
         // Skip products that already have a value (unless overwrite)
         const toProcess: Array<typeof enriched[0] & { batchIndex: number }> = [];
