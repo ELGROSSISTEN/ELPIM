@@ -3104,18 +3104,22 @@ ${productLines}`;
                 vars.sku ? `  sku: ${vars.sku}` : '',
                 vars.collections ? `  kollektioner: ${vars.collections}` : '',
               ].filter(Boolean).join('\n');
-              const productContextBlock = productContextLines
+              // Only inject the PRODUKT identity block when there are no source rows at all.
+              // When source rows exist, the AI already sees which product it is from KILDEDATA —
+              // adding a separate PRODUKT block causes the AI to treat it as a "summarize first"
+              // cue, producing a plain-text description preamble before the FAQ/HTML content.
+              // For products with no source rows AND no {{placeholder}} substitutions in the
+              // prompt template, the PRODUKT block is the only product context the AI has.
+              const productContextBlock = (productContextLines && allSourceRows.length === 0)
                 ? `\n\nPRODUKT:\n${productContextLines}`
                 : '';
-              // Mirror the /products/[id] individual AI worker prompt exactly:
-              // masterPrompt → shopIntroContext → rendered prompt → product identity → supplier data → format reminder
-              // For HTML fields: remind AI to use the exact HTML format from the rendered prompt and start directly
-              // with the first HTML element — prevents preamble descriptions before FAQ/HTML output.
-              // For plain-text fields: forbid HTML/markdown.
-              const outputFormatInstruction = outputIsHtml
-                ? '\n\nVIGTIGT: Returner output i præcist det HTML-format der er specificeret i instrukserne ovenfor. Start DIREKTE med det første HTML-tag — skriv INGEN indledning, INGEN produktbeskrivelse og INGEN præambel.'
+              // Mirror /products/[id] exactly: no trailing instruction for HTML fields.
+              // The HTML format instructions live in the rendered prompt template itself —
+              // adding a separate trailing reminder conflicts and confuses model output.
+              const noHtmlInstruction = outputIsHtml
+                ? ''
                 : '\n\nVIGTIGT: Returnér UDELUKKENDE ren tekst. Brug IKKE HTML-tags, markdown eller anden formatering.';
-              const finalPrompt = `${masterPrompt}${shopIntroContext}\n\n${rendered}${productContextBlock}${supplierContext}${sourcesOnlyInstruction}${outputFormatInstruction}`;
+              const finalPrompt = `${masterPrompt}${shopIntroContext}\n\n${rendered}${productContextBlock}${supplierContext}${sourcesOnlyInstruction}${noHtmlInstruction}`;
               promptUsed = finalPrompt;
               const res = await callOpenAi(openAiApiKey, finalPrompt, { webSearchEnabled: false });
               campaignTokensInput += res.usage.promptTokens;
