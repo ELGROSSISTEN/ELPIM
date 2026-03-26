@@ -2748,6 +2748,21 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
     let campaignTokensInput = 0;
     let campaignTokensOutput = 0;
 
+    // Build list of product IDs to exclude based on aiProcessedAt dates
+    const excludedDates = ((campaign as any).excludeProcessedDatesJson as string[]) ?? [];
+    let excludedProductIds: string[] = [];
+    if (excludedDates.length > 0) {
+      const processedProducts = await (prisma as any).product.findMany({
+        where: { shopId: campaign.shopId, aiProcessedAt: { not: null } },
+        select: { id: true, aiProcessedAt: true },
+      });
+      excludedProductIds = (processedProducts as Array<{ id: string; aiProcessedAt: Date | null }>)
+        .filter(p => p.aiProcessedAt && excludedDates.includes(p.aiProcessedAt.toISOString().slice(0, 10)))
+        .map(p => p.id);
+    }
+
+    const maxItems: number | null = (campaign as any).maxItems ?? null;
+
     // Process in batches of batchSize
     const ITEM_BATCH = campaign.batchSize as number;
 
@@ -2760,7 +2775,11 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
       }
 
       const pendingItems = await (prisma as any).runCampaignItem.findMany({
-        where: { campaignId, status: { in: ['pending', 'failed'] } },
+        where: {
+          campaignId,
+          status: { in: ['pending', 'failed'] },
+          ...(excludedProductIds.length > 0 ? { productId: { notIn: excludedProductIds } } : {}),
+        },
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
         take: ITEM_BATCH,
       });
@@ -3036,6 +3055,8 @@ ${productLines}`;
           let productPromptTokens = batchPromptPerProduct;
           let productCompletionTokens = batchCompletionPerProduct;
 
+          let promptUsed = ''; // tracks the exact prompt sent to AI for this field (stored for UI inspection)
+
           if (batchResults) {
             suggested = batchResults[i] ?? '';
           } else {
@@ -3085,6 +3106,7 @@ ${productLines}`;
                 ? '\n\nVIGTIGT: Returner output i præcist det HTML-format der er specificeret i instrukserne ovenfor. Start DIREKTE med det første HTML-tag — skriv INGEN indledning, INGEN produktbeskrivelse og INGEN præambel.'
                 : '\n\nVIGTIGT: Returnér UDELUKKENDE ren tekst. Brug IKKE HTML-tags, markdown eller anden formatering.';
               const finalPrompt = `${masterPrompt}${shopIntroContext}\n\n${rendered}${productContextBlock}${supplierContext}${sourcesOnlyInstruction}${outputFormatInstruction}`;
+              promptUsed = finalPrompt;
               const res = await callOpenAi(openAiApiKey, finalPrompt, { webSearchEnabled: false });
               campaignTokensInput += res.usage.promptTokens;
               campaignTokensOutput += res.usage.completionTokens;
@@ -3126,7 +3148,9 @@ ${productLines}`;
           fieldsDone[fd.id] = 'done';
           const fieldValues = (item.fieldValuesJson ?? {}) as Record<string, string>;
           fieldValues[fd.id] = suggested;
-          await (prisma as any).runCampaignItem.update({ where: { id: item.id }, data: { fieldsDoneJson: fieldsDone, fieldValuesJson: fieldValues } });
+          const promptsUsed = (item.promptsUsedJson ?? {}) as Record<string, string>;
+          if (promptUsed) promptsUsed[fd.id] = promptUsed;
+          await (prisma as any).runCampaignItem.update({ where: { id: item.id }, data: { fieldsDoneJson: fieldsDone, fieldValuesJson: fieldValues, promptsUsedJson: promptsUsed } });
 
           // Log AI usage (same as individual runs — shows in AI-forbrug)
           const productTotalTokens = productPromptTokens + productCompletionTokens;
@@ -3158,14 +3182,19 @@ ${productLines}`;
         }
       }
 
-      // Mark all batch items as done/failed
-      for (const { item } of enriched) {
+      // Mark all batch items as done/failed and stamp aiProcessedAt on the product
+      const now = new Date();
+      for (const { item, product } of enriched) {
         const refreshed = await (prisma as any).runCampaignItem.findUnique({ where: { id: item.id }, select: { fieldsDoneJson: true } });
         const fieldsDone = (refreshed?.fieldsDoneJson ?? {}) as Record<string, string>;
         const allFieldKeys = fieldDefs.map((f: any) => f.id);
         const hasFailure = allFieldKeys.some((k: string) => fieldsDone[k] === 'failed');
         const finalStatus = hasFailure ? 'failed' : 'done';
-        await (prisma as any).runCampaignItem.update({ where: { id: item.id }, data: { status: finalStatus, processedAt: new Date() } });
+        await (prisma as any).runCampaignItem.update({ where: { id: item.id }, data: { status: finalStatus, processedAt: now } });
+        if (product) {
+          // Stamp aiProcessedAt so this product can be identified by date in future campaign filters
+          await (prisma as any).product.update({ where: { id: product.id }, data: { aiProcessedAt: now } });
+        }
         if (finalStatus === 'done') processedTotal++; else failedTotal++;
       }
 
@@ -3177,6 +3206,13 @@ ${productLines}`;
       const runningCostUsd = (campaignTokensInput * OPENAI_INPUT_USD_PER_1K / 1000) + (campaignTokensOutput * OPENAI_OUTPUT_USD_PER_1K / 1000);
       await (prisma as any).runCampaign.update({ where: { id: campaignId }, data: { doneItems: nowDone, failedItems: nowFailed, skippedItems: nowSkipped, tokensUsed: campaignTokensInput + campaignTokensOutput, costUsd: runningCostUsd } });
       await logCampaign(campaignId, 'success', `Batch færdig: ${processedTotal} behandlet i alt, ${failedTotal} fejlet.`);
+
+      // Check maxItems limit — pause the campaign if reached so user can review before continuing
+      if (maxItems !== null && processedTotal >= maxItems) {
+        await (prisma as any).runCampaign.update({ where: { id: campaignId }, data: { status: 'paused' } });
+        await logCampaign(campaignId, 'warn', `Kørsel sat på pause: ${processedTotal} produkter behandlet (grænse: ${maxItems}). Genoptag manuelt for at fortsætte.`);
+        break;
+      }
     }
 
     await markJobDone(syncJobId);

@@ -578,6 +578,7 @@ model Product {
   shopifyUpdatedAt  DateTime? // set when Shopify pushes data TO ePIM via webhook
   shopifyDeletedAt  DateTime? // set when Shopify sends products/delete webhook
   createdVia        String    @default("shopify") // shopify | epim | import
+  aiProcessedAt     DateTime? // set when a RunCampaign finishes all fields for this product
 
   shop        Shop             @relation(fields: [shopId], references: [id])
   variants    Variant[]
@@ -876,9 +877,11 @@ model RunCampaign {
   overwriteJson    Json     @default("[]") // string[] — fieldDefIds where we overwrite existing values
   sourceIdsJson    Json     @default("[]") // string[] — source IDs to include (empty = all active)
   sourcesOnly      Boolean  @default(false)
-  promptsJson      Json     @default("{}") // { fieldId: promptTemplateId }
-  autoSync         Boolean  @default(false)
-  outputLength     String   @default("mellem") // kort | mellem | lang
+  promptsJson               Json     @default("{}") // { fieldId: promptTemplateId }
+  autoSync                  Boolean  @default(false)
+  outputLength              String   @default("mellem") // kort | mellem | lang
+  maxItems                  Int?     // stop (pause) after processing this many products; null = unlimited
+  excludeProcessedDatesJson Json     @default("[]") // string[] — "YYYY-MM-DD" dates: skip products with aiProcessedAt on these dates
   totalItems       Int      @default(0)
   doneItems        Int      @default(0)
   failedItems      Int      @default(0)
@@ -907,6 +910,7 @@ model RunCampaignItem {
   status          String    @default("pending") // pending | processing | done | failed | skipped
   fieldsDoneJson  Json      @default("{}") // { fieldDefId: "done"|"failed"|"skipped" }
   fieldValuesJson Json      @default("{}") // { fieldDefId: "generated text..." }
+  promptsUsedJson Json      @default("{}") // { fieldDefId: "full prompt sent to AI" }
   syncedAt        DateTime?
   processedAt     DateTime?
   errorMsg        String?

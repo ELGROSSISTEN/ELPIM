@@ -10133,6 +10133,25 @@ app.post('/notify/bulk-done', async (request: any, reply: any) => {
 // RUN CAMPAIGNS — bulk AI processing
 // ══════════════════════════════════════════════════════════════════════════════
 
+// GET /run-campaigns/processed-dates — return [{date, count}] of products grouped by aiProcessedAt date
+app.get('/run-campaigns/processed-dates', async (request: any, reply: any) => {
+  if (!(await withAuth(request, reply))) return;
+  const user = await getCurrentUser(request);
+  const shopId = await resolveShopIdForPlatformAdmin(request, user);
+  if (!shopId) return reply.code(400).send({ error: 'Connect a shop first' });
+
+  // Raw query: group by date portion of aiProcessedAt
+  const rows: Array<{ date: string; count: string }> = await prisma.$queryRaw`
+    SELECT DATE("aiProcessedAt" AT TIME ZONE 'UTC')::text AS date, COUNT(*)::text AS count
+    FROM "Product"
+    WHERE "shopId" = ${shopId}
+      AND "aiProcessedAt" IS NOT NULL
+    GROUP BY DATE("aiProcessedAt" AT TIME ZONE 'UTC')
+    ORDER BY date DESC
+  `;
+  return reply.send({ dates: rows.map(r => ({ date: r.date, count: Number(r.count) })) });
+});
+
 // GET /run-campaigns — list all campaigns for current shop
 app.get('/run-campaigns', async (request: any, reply: any) => {
   if (!(await withAuth(request, reply))) return;
@@ -10173,6 +10192,8 @@ app.post('/run-campaigns', async (request: any, reply: any) => {
     promptsJson?: Record<string, string>;
     autoSync?: boolean;
     outputLength?: string;
+    maxItems?: number | null;
+    excludeProcessedDatesJson?: string[];
   };
 
   if (!body.name?.trim()) return reply.code(400).send({ error: 'name er påkrævet' });
@@ -10192,6 +10213,8 @@ app.post('/run-campaigns', async (request: any, reply: any) => {
       promptsJson: body.promptsJson ?? {},
       autoSync: body.autoSync ?? false,
       outputLength: body.outputLength ?? 'mellem',
+      maxItems: body.maxItems ?? null,
+      excludeProcessedDatesJson: body.excludeProcessedDatesJson ?? [],
     } as any,
   });
   return reply.code(201).send({ campaign });
@@ -10252,7 +10275,7 @@ app.get('/run-campaigns/:id/items', async (request: any, reply: any) => {
       take: pageSize,
       select: {
         id: true, productId: true, title: true, sku: true, ean: true, status: true,
-        fieldsDoneJson: true, fieldValuesJson: true, syncedAt: true, processedAt: true, errorMsg: true, sortOrder: true,
+        fieldsDoneJson: true, fieldValuesJson: true, promptsUsedJson: true, syncedAt: true, processedAt: true, errorMsg: true, sortOrder: true,
       },
     }),
   ]);

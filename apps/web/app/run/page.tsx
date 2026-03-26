@@ -15,6 +15,7 @@ type Campaign = {
   collectionsFirst: boolean; excludeSkusJson: string[]; overwriteJson: string[];
   totalItems: number; doneItems: number; failedItems: number; skippedItems: number;
   tokensUsed: number; costUsd: string; autoSync: boolean; outputLength: string;
+  maxItems: number | null; excludeProcessedDatesJson: string[];
   startedAt: string | null; completedAt: string | null; createdAt: string;
 };
 
@@ -22,6 +23,7 @@ type CampaignItem = {
   id: string; productId: string; title: string | null; sku: string | null; ean: string | null;
   status: string; fieldsDoneJson: Record<string, string>;
   fieldValuesJson: Record<string, string>;
+  promptsUsedJson: Record<string, string>;
   syncedAt: string | null; processedAt: string | null; errorMsg: string | null; sortOrder: number;
 };
 
@@ -164,8 +166,12 @@ export default function RunPage() {
   const [newExcludeSkus, setNewExcludeSkus] = useState('');
   const [newAutoSync, setNewAutoSync] = useState(false);
   const [newOutputLength, setNewOutputLength] = useState<'kort' | 'mellem' | 'lang'>('mellem');
+  const [newMaxItems, setNewMaxItems] = useState<number | ''>('');
+  const [newExcludeDates, setNewExcludeDates] = useState<string[]>([]);
+  const [processedDates, setProcessedDates] = useState<{ date: string; count: number }[]>([]);
 
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  const [shownPromptKey, setShownPromptKey] = useState<string | null>(null); // `${itemId}-${fieldId}`
 
   const [statusMsg, setStatusMsg] = useState('');
   const [loading, setLoading] = useState(false);
@@ -173,7 +179,7 @@ export default function RunPage() {
   const logEndRef = useRef<HTMLDivElement>(null);
   const prevCampaignStatusRef = useRef<string | null>(null);
 
-  useEffect(() => { void loadCampaigns(); void loadFieldDefs(); void loadSources(); void loadPrompts(); }, []);
+  useEffect(() => { void loadCampaigns(); void loadFieldDefs(); void loadSources(); void loadPrompts(); void loadProcessedDates(); }, []);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -233,6 +239,13 @@ export default function RunPage() {
     } catch { /* ignore */ }
   };
 
+  const loadProcessedDates = async (): Promise<void> => {
+    try {
+      const res = await apiFetch<{ dates: { date: string; count: number }[] }>('/run-campaigns/processed-dates');
+      setProcessedDates(res.dates ?? []);
+    } catch { /* ignore */ }
+  };
+
   const loadDetail = async (id: string): Promise<void> => {
     try {
       const res = await apiFetch<{ campaign: Campaign; logs: LogEntry[]; itemCounts: { status: string; _count: { status: number } }[] }>(`/run-campaigns/${id}`);
@@ -278,6 +291,8 @@ export default function RunPage() {
           promptsJson: newPromptsJson,
           autoSync: newAutoSync,
           outputLength: newOutputLength,
+          maxItems: newMaxItems !== '' ? Number(newMaxItems) : null,
+          excludeProcessedDatesJson: newExcludeDates,
         }),
       });
       const campaign = res.campaign;
@@ -290,7 +305,7 @@ export default function RunPage() {
       setStatusMsg(`Klar: ${popRes.total.toLocaleString('da-DK')} produkter indlæst`);
 
       setShowCreate(false);
-      setNewName(''); setNewFields([]); setNewPromptsJson({}); setNewScope(10); setNewSourceIds([]); setNewSourcesOnly(false); setNewAutoSync(false); setNewOutputLength('mellem');
+      setNewName(''); setNewFields([]); setNewPromptsJson({}); setNewScope(10); setNewSourceIds([]); setNewSourcesOnly(false); setNewAutoSync(false); setNewOutputLength('mellem'); setNewMaxItems(''); setNewExcludeDates([]);
       await loadCampaigns();
       setSelectedId(campaign.id);
     } catch (err) {
@@ -661,6 +676,18 @@ export default function RunPage() {
                       <input className="ep-input" type="number" min={1} max={200} value={newBatchSize} onChange={(e) => setNewBatchSize(Number(e.target.value))} />
                       <span className="text-xs text-slate-400">Produkter pr. AI-kald (standard: 1)</span>
                     </label>
+                    <label className="text-sm">
+                      <span className="font-medium text-slate-700 block mb-1">Maksimalt antal produkter</span>
+                      <input
+                        className="ep-input"
+                        type="number"
+                        min={1}
+                        placeholder="Ubegrænset"
+                        value={newMaxItems}
+                        onChange={(e) => setNewMaxItems(e.target.value === '' ? '' : Number(e.target.value))}
+                      />
+                      <span className="text-xs text-slate-400">Sæt på pause efter N produkter (tom = kør alle)</span>
+                    </label>
                   </div>
                   <label className="flex items-center gap-2 text-sm cursor-pointer">
                     <input type="checkbox" className="accent-indigo-600" checked={newCollectionsFirst} onChange={(e) => setNewCollectionsFirst(e.target.checked)} />
@@ -677,6 +704,29 @@ export default function RunPage() {
                     />
                     <span className="text-xs text-slate-400">Ét pr. linje eller kommasepareret</span>
                   </label>
+                  {processedDates.length > 0 && (
+                    <div className="text-sm">
+                      <span className="font-medium text-slate-700 block mb-1">Ekskluder produkter behandlet på dato</span>
+                      <p className="text-xs text-slate-400 mb-2">Spring produkter over som allerede er AI-behandlet på disse datoer</p>
+                      <div className="space-y-1 max-h-48 overflow-y-auto">
+                        {processedDates.map(({ date, count }) => {
+                          const checked = newExcludeDates.includes(date);
+                          return (
+                            <label key={date} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 cursor-pointer border transition-all ${checked ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                              <input
+                                type="checkbox"
+                                className="accent-amber-500 shrink-0"
+                                checked={checked}
+                                onChange={(e) => setNewExcludeDates((prev) => e.target.checked ? [...prev, date] : prev.filter((d) => d !== date))}
+                              />
+                              <span className="font-mono text-slate-700 text-xs">{date}</span>
+                              <span className="text-slate-400 text-xs ml-auto">{count.toLocaleString('da-DK')} produkter</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -981,14 +1031,32 @@ export default function RunPage() {
                                         const fd = fieldDefs.find((f) => f.id === fid) ?? SYSTEM_FIELD_DEFS.find((f) => f.id === fid);
                                         const statusVal = item.fieldsDoneJson?.[fid];
                                         const textVal = item.fieldValuesJson?.[fid];
+                                        const promptVal = item.promptsUsedJson?.[fid];
+                                        const promptKey = `${item.id}-${fid}`;
+                                        const promptShown = shownPromptKey === promptKey;
                                         return (
                                           <div key={fid} className="rounded-lg bg-white border border-slate-200 p-3">
                                             <div className="flex items-center justify-between mb-2">
                                               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{fd?.label ?? fid}</span>
-                                              <span className={`text-xs rounded-full px-1.5 py-0.5 font-medium ${statusVal === 'done' ? 'bg-emerald-100 text-emerald-600' : statusVal === 'failed' ? 'bg-red-100 text-red-600' : statusVal === 'skipped' ? 'bg-slate-100 text-slate-500' : 'bg-slate-50 text-slate-400'}`}>
-                                                {statusVal === 'done' ? 'Genereret' : statusVal === 'failed' ? 'Fejlet' : statusVal === 'skipped' ? 'Sprunget over' : 'Afventer'}
-                                              </span>
+                                              <div className="flex items-center gap-1.5">
+                                                {promptVal && (
+                                                  <button
+                                                    className="text-[11px] text-indigo-500 hover:text-indigo-700 border border-indigo-200 hover:border-indigo-400 rounded px-1.5 py-0.5 transition"
+                                                    onClick={() => setShownPromptKey(promptShown ? null : promptKey)}
+                                                  >
+                                                    {promptShown ? 'Skjul prompt' : 'Vis prompt anvendt'}
+                                                  </button>
+                                                )}
+                                                <span className={`text-xs rounded-full px-1.5 py-0.5 font-medium ${statusVal === 'done' ? 'bg-emerald-100 text-emerald-600' : statusVal === 'failed' ? 'bg-red-100 text-red-600' : statusVal === 'skipped' ? 'bg-slate-100 text-slate-500' : 'bg-slate-50 text-slate-400'}`}>
+                                                  {statusVal === 'done' ? 'Genereret' : statusVal === 'failed' ? 'Fejlet' : statusVal === 'skipped' ? 'Sprunget over' : 'Afventer'}
+                                                </span>
+                                              </div>
                                             </div>
+                                            {promptShown && promptVal && (
+                                              <div className="mb-2 rounded bg-slate-950 p-2.5 max-h-64 overflow-y-auto">
+                                                <pre className="text-[10px] text-slate-300 whitespace-pre-wrap break-words leading-relaxed">{promptVal}</pre>
+                                              </div>
+                                            )}
                                             {textVal ? (
                                               <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
                                                 {textVal.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}
