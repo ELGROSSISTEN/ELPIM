@@ -677,7 +677,7 @@ export default function ProductDetailsPage() {
   const aiPrompt = useMemo(() => {
     const fieldLabel = fields.find((field) => field.id === selectedFieldId)?.label ?? 'Valgt felt';
     const htmlInstruction = aiUseHtmlOutput
-      ? '\n\nHTML FORMATERING AKTIVERET:\nStrukturér og opstil outputtet med semantisk HTML (fx <p>, <h2>, <ul>/<li>, <strong>). Brug HTML til at skabe overskuelighed og hierarki. Returnér kun HTML-koden uden wrapper-elementer.'
+      ? '\n\nHTML FORMATERING AKTIVERET:\nReturnér output som ren HTML. Følg præcist det HTML-format der er specificeret i instruksen ovenfor — brug ellers semantisk HTML med passende tags. Ingen markdown, ingen forklaringstekst — kun HTML-koden.'
       : '';
     const webSearchInstruction = aiUseWebSearch
       ? '\n\nWEB SØGNING AKTIVERET:\nDu må aktivt søge på web for opdateret kontekst og formulering.'

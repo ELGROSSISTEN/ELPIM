@@ -2927,7 +2927,7 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
         // The INDIVIDUAL_PROMPT_PREFIX matches DEFAULT_AI_BASE_PROMPT from the frontend exactly.
         const rawPromptBody = promptsByField[fd.id] ?? `Generer ${fd.label}.`;
         const htmlInstruction = outputIsHtml
-          ? '\n\nHTML FORMATERING AKTIVERET:\nStrukturér og opstil outputtet med semantisk HTML (fx <p>, <h2>, <ul>/<li>, <strong>). Brug HTML til at skabe overskuelighed og hierarki. Returnér kun HTML-koden uden wrapper-elementer.'
+          ? '\n\nHTML FORMATERING AKTIVERET:\nReturnér output som ren HTML. Følg præcist det HTML-format der er specificeret i instruksen ovenfor — brug ellers semantisk HTML med passende tags. Ingen markdown, ingen forklaringstekst — kun HTML-koden.'
           : '';
         const sourcePreview = activeSources.length > 0
           ? `\n\n--- DATAKILDER (injiceres ved generering) ---\n${activeSources.map((s) => `[${s.name}]: ${workerReadSourceMeta(s.tagsJson).promptTemplate ?? 'Standard datakilde-prompt'}`).join('\n')}`
