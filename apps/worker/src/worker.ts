@@ -3120,13 +3120,12 @@ ${productLines}`;
                 vars.sku ? `  sku: ${vars.sku}` : '',
                 vars.collections ? `  kollektioner: ${vars.collections}` : '',
               ].filter(Boolean).join('\n');
-              // Only inject the PRODUKT identity block when there are no source rows at all.
-              // When source rows exist, the AI already sees which product it is from KILDEDATA —
-              // adding a separate PRODUKT block causes the AI to treat it as a "summarize first"
-              // cue, producing a plain-text description preamble before the FAQ/HTML content.
-              // For products with no source rows AND no {{placeholder}} substitutions in the
-              // prompt template, the PRODUKT block is the only product context the AI has.
-              const productContextBlock = (productContextLines && allSourceRows.length === 0)
+              // Always inject the PRODUKT identity block so the AI knows which product to write about.
+              // This prevents hallucination when source lookups return 0 rows (empty metadata-only
+              // responses still count as allSourceRows entries, suppressing product context).
+              // The htmlInstruction now explicitly says "follow the format from above", so the AI
+              // won't summarize the product before FAQ/HTML content as it did previously.
+              const productContextBlock = productContextLines
                 ? `\n\nPRODUKT:\n${productContextLines}`
                 : '';
               // Mirror /products/[id] exactly: no trailing instruction for HTML fields.
