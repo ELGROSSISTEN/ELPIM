@@ -2711,14 +2711,21 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
     const fieldDefs: Array<{ id: string; label: string; type: string; defaultPrompt?: string }> = [...customFieldDefs, ...systemFieldDefs];
 
     // Load AI config
-    const [aiIntroRow, masterPromptRow, platformKeyRow] = await Promise.all([
+    const [aiIntroRow, masterPromptRow, platformKeyRow, brandVoiceLockRow, brandVoiceGuideRow] = await Promise.all([
       prisma.shopSetting.findUnique({ where: { shopId_key: { shopId: campaign.shopId, key: 'ai_introduction' } } }),
       prisma.shopSetting.findUnique({ where: { shopId_key: { shopId: campaign.shopId, key: 'master_prompt' } } }),
       prisma.platformSetting.findUnique({ where: { key: 'openai_api_key' } }),
+      prisma.shopSetting.findUnique({ where: { shopId_key: { shopId: campaign.shopId, key: 'brandVoiceLock' } } }),
+      prisma.shopSetting.findUnique({ where: { shopId_key: { shopId: campaign.shopId, key: 'brandVoiceGuide' } } }),
     ]);
 
     const aiIntroduction = typeof (aiIntroRow?.valueJson as any) === 'string' ? (aiIntroRow?.valueJson as string) : '';
     const masterPrompt = typeof (masterPromptRow?.valueJson as any) === 'string' ? (masterPromptRow?.valueJson as string) : DEFAULT_MASTER_PROMPT;
+    const brandVoiceLock = String(brandVoiceLockRow?.valueJson ?? 'true') !== 'false';
+    const brandVoiceGuide = typeof (brandVoiceGuideRow?.valueJson as any) === 'string'
+      ? (brandVoiceGuideRow?.valueJson as string)
+      : 'Professionel tone: teknisk kompetent, tillidsvækkende, konkret og handlingsorienteret. Undgå hype og fluffy vendinger.';
+    const brandVoiceInstruction = brandVoiceLock ? `\n\nBRAND VOICE LOCK (obligatorisk):\n${brandVoiceGuide}` : '';
     const platformKeyData = ((platformKeyRow?.valueJson ?? {}) as Record<string, unknown>);
     const encryptedPlatformKey = typeof platformKeyData.encryptedKey === 'string' ? platformKeyData.encryptedKey : null;
     if (!encryptedPlatformKey) {
@@ -2951,7 +2958,7 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
         const sourcesOnlyPreview = sourcesOnly && activeSources.length > 0
           ? '\n\nVIGTIGT — BRUG UDELUKKENDE KILDEDATA: Brug kun information fra kildedataene.'
           : '';
-        const promptTemplate = `${INDIVIDUAL_PROMPT_PREFIX}\n\nFELT DU SKAL GENERERE TIL: ${fd.label}\n\nSUPPLERENDE INSTRUKTION:\n${rawPromptBody}${effectiveLengthInstruction}${htmlInstruction}${sourcePreview}${sourcesOnlyPreview}`;
+        const promptTemplate = `${INDIVIDUAL_PROMPT_PREFIX}\n\nFELT DU SKAL GENERERE TIL: ${fd.label}\n\nSUPPLERENDE INSTRUKTION:\n${rawPromptBody}${effectiveLengthInstruction}${brandVoiceInstruction}${htmlInstruction}${sourcePreview}${sourcesOnlyPreview}`;
 
         // Skip products that already have a value (unless overwrite)
         const toProcess: Array<typeof enriched[0] & { batchIndex: number }> = [];
