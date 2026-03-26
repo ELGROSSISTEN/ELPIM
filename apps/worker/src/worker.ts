@@ -2602,6 +2602,71 @@ type RunCampaignJobRef = { syncJobId: string };
 
 const runCampaignQueue = new Queue<RunCampaignJobRef>('run-campaign', { connection });
 
+// ── Campaign auto-preset matching ─────────────────────────────────────────────
+// Mirrors DEFAULT_AI_PROMPT_PRESETS + FIELD_PRESET_MAP from /products/[id]/page.tsx
+// so that campaign runs use the same field-specific instructions as individual runs
+// when no explicit prompt template is selected in the campaign configuration.
+const WORKER_PROMPT_PRESETS: Array<{ label: string; instruction: string }> = [
+  {
+    label: 'Produktbeskrivelse',
+    instruction: 'Skriv en overbevisende produktbeskrivelse der sætter kunden i centrum. Start med den vigtigste fordel. Beskriv hvad produktet gør, hvem det er til, og hvorfor det er det rigtige valg — uden at opfinde detaljer der ikke fremgår af data. Salgsstærkt, konkret og letlæseligt.',
+  },
+  {
+    label: 'Kort beskrivelse',
+    instruction: 'Skriv 2-3 sætninger der fanger essensen: hvad er produktet, hvad gør det, og hvorfor købe det. Direkte, salgsstærkt, ingen fyld.',
+  },
+  {
+    label: 'Metatitel',
+    instruction: 'Generér en SEO-metatitel. STRENGT KRAV: Resultatet MÅ ABSOLUT IKKE overstige 60 tegn — tæl tegnene inden du returnerer. Primært søgeord tidligt i titlen, produktnavn med, naturligt og klikvenligt. Ingen marketing-snak, ingen udråbstegn. Hvis dit første udkast er over 60 tegn, skær ned og prøv igen, indtil det er inden for grænsen.',
+  },
+  {
+    label: 'Metabeskrivelse',
+    instruction: 'Generér en SEO-metabeskrivelse. STRENGT KRAV: Resultatet SKAL være mellem 140 og 160 tegn — tæl tegnene inden du returnerer. Er dit udkast kortere end 140, udvid det. Er det over 160, skær ned. Tydelig kundeværdi + konkret call-to-action. Inkludér primært søgeord naturligt — ingen generiske sætninger.',
+  },
+  {
+    label: 'FAQ',
+    instruction: `TRIN 1 — EVALUER DATA INDEN DU SKRIVER NOGET:
+Gennemgå de tilgængelige produktdata. Tæl kun faktuelle detaljer der er direkte angivet: konkrete egenskaber, specifikationer, materialer, kompatibilitet, mål, certifikationer eller lignende.
+Følgende tæller IKKE som faktuelle detaljer: produktnavn, varenummer, EAN/stregkode, SKU, pris, leverandørnavn, webshopnavn.
+
+Hvis der er FÆRRE END 3 konkrete faktuelle detaljer → returnér udelukkende en tom streng. Ingen FAQ. Ingen forklaring.
+
+TRIN 2 — KUN HVIS DATA ER TILSTRÆKKELIGE:
+Generér 3-5 korte FAQ-spørgsmål og svar baseret strengt på de faktuelle detaljer fra trin 1.
+
+Regler:
+- Hvert svar skal besvares fuldt ud med konkret information fra kildedata — ikke med "det fremgår ikke" eller lignende.
+- Spørg aldrig "hvad er dette produkt?" eller spørgsmål der blot gentager produktnavnet.
+- Spørg ikke om pris, lager, levering, bestilling eller autenticitet — disse hører ikke hjemme i en produkttekst.
+- Nævn ALDRIG webshoppens navn eller varenummer/EAN i svarene.
+- Opfind ikke egenskaber, mål, materialer, kompatibilitet, godkendelser eller tekniske specifikationer.
+- Undgå generiske vendinger som "høj kvalitet", "optimal ydeevne", "designet til præcis funktionalitet".
+- Et svar der primært beskriver hvad der mangler i data er ikke et gyldigt svar — slet spørgsmålet i stedet.`,
+  },
+];
+
+// Pattern matching to auto-select the right preset for a field — mirrors FIELD_PRESET_MAP in frontend
+const workerGetAutoPreset = (label: string, key: string): string | null => {
+  const k = key.toLowerCase();
+  const l = label.toLowerCase();
+  if (k === '_meta_title' || /meta[_\s-]?titel|seo[_\s-]?titel|meta[_\s-]?title|seo[_\s-]?title/.test(k)) {
+    return WORKER_PROMPT_PRESETS.find((p) => p.label === 'Metatitel')?.instruction ?? null;
+  }
+  if (k === '_meta_description' || /meta[_\s-]?beskriv|seo[_\s-]?beskriv|meta[_\s-]?desc|seo[_\s-]?desc/.test(k)) {
+    return WORKER_PROMPT_PRESETS.find((p) => p.label === 'Metabeskrivelse')?.instruction ?? null;
+  }
+  if (/faq/.test(k) || /faq/.test(l)) {
+    return WORKER_PROMPT_PRESETS.find((p) => p.label === 'FAQ')?.instruction ?? null;
+  }
+  if (/kort[_\s-]?beskriv|short[_\s-]?desc|excerpt|uddrag/.test(k) || /kort[_\s-]?beskriv|short[_\s-]?desc|uddrag/.test(l)) {
+    return WORKER_PROMPT_PRESETS.find((p) => p.label === 'Kort beskrivelse')?.instruction ?? null;
+  }
+  if (k === '_description' || /beskriv|description|body/.test(k)) {
+    return WORKER_PROMPT_PRESETS.find((p) => p.label === 'Produktbeskrivelse')?.instruction ?? null;
+  }
+  return null;
+};
+
 // System fields that live on the Product record itself (not in FieldValue)
 const RC_SYSTEM_FIELDS = [
   {
@@ -2690,10 +2755,10 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
     const systemFieldIds = fields.filter((f: string) => f.startsWith('__'));
     const customFieldDefs = await prisma.fieldDefinition.findMany({
       where: { id: { in: customFieldIds }, shopId: campaign.shopId },
-      select: { id: true, label: true, type: true },
+      select: { id: true, label: true, type: true, key: true },
     });
     const systemFieldDefs = RC_SYSTEM_FIELDS.filter((sf) => systemFieldIds.includes(sf.id));
-    const fieldDefs: Array<{ id: string; label: string; type: string; defaultPrompt?: string }> = [...customFieldDefs, ...systemFieldDefs];
+    const fieldDefs: Array<{ id: string; label: string; type: string; key?: string; defaultPrompt?: string }> = [...customFieldDefs, ...systemFieldDefs];
 
     // Load AI config
     const [aiIntroRow, masterPromptRow, platformKeyRow, brandVoiceLockRow, brandVoiceGuideRow] = await Promise.all([
@@ -2729,10 +2794,11 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
       ? '\n\nLÆNGDE: Fyldestgørende og detaljeret. Dæk alle relevante aspekter grundigt med eksempler og forklaringer. 300-600+ ord.'
       : '\n\nLÆNGDE: Velbalanceret. Dæk alle vigtige aspekter og inkluder relevante detaljer. Ca. 150-250 ord.';
 
-    // Load prompt templates for each field — use per-field selection from promptsJson, fall back to default
-    // NOTE: System fields (__description, etc.) do NOT use the shop's default template unless explicitly chosen,
-    //       because the default template is designed for custom fields and has no HTML/format instructions.
-    //       They fall back to fd.defaultPrompt which already has the correct output format specified.
+    // Load prompt templates for each field — priority order mirrors /products/[id]:
+    // 1. Explicitly selected prompt template (by UUID from campaign promptsJson)
+    // 2. Auto-matched preset based on field label/key (same logic as getAutoPreset in frontend)
+    // 3. Shop's isDefault template (only for custom fields with no preset match)
+    // 4. System field defaultPrompt or generic fallback
     const selectedPrompts: Record<string, string> = ((campaign as any).promptsJson as Record<string, string>) ?? {};
     const promptsByField: Record<string, string> = {};
     for (const fd of fieldDefs) {
@@ -2740,8 +2806,15 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
       let pt: { body: string } | null = null;
       if (selectedId) {
         pt = await prisma.promptTemplate.findFirst({ where: { id: selectedId, shopId: campaign.shopId }, select: { body: true } });
-      } else if (!fd.id.startsWith('__')) {
-        // Custom fields: use shop's default template as fallback
+      }
+      if (!pt && !fd.id.startsWith('__')) {
+        // Auto-match preset by field label/key — same as getAutoPreset() in /products/[id]
+        const autoInstruction = workerGetAutoPreset(fd.label, (fd as any).key ?? fd.label);
+        if (autoInstruction) {
+          promptsByField[fd.id] = autoInstruction;
+          continue;
+        }
+        // No preset match: fall back to shop's default template
         pt = await prisma.promptTemplate.findFirst({ where: { shopId: campaign.shopId, isDefault: true }, orderBy: { createdAt: 'desc' }, select: { body: true } });
       }
       // System fields without explicit selection fall through to fd.defaultPrompt below
@@ -2992,14 +3065,9 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
           const lines = [
             `Produkt ${i + 1}:`,
             `  titel: ${variables!.title}`,
-            variables!.handle ? `  handle: ${variables!.handle}` : '',
-            variables!.vendor ? `  leverandør: ${variables!.vendor}` : '',
-            variables!.productType ? `  produkttype: ${variables!.productType}` : '',
             variables!.collections ? `  kollektioner: ${variables!.collections}` : '',
-            variables!.status ? `  status: ${variables!.status}` : '',
             variables!.barcode ? `  ean/stregkode: ${variables!.barcode}` : '',
             v ? `  sku: ${(v as any).sku ?? ''}` : '',
-            v ? `  pris: ${(v as any).price ?? ''}` : '',
             variables!.weight ? `  vægt: ${variables!.weight}${variables!.weightUnit ? ' ' + variables!.weightUnit : ''}` : '',
             variables!.descriptionHtml ? `  beskrivelse: ${variables!.descriptionHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500)}` : '',
           ].filter(Boolean).join('\n');
@@ -3125,8 +3193,6 @@ ${productLines}`;
               const vars = (variables ?? {}) as Record<string, string>;
               const productContextLines = [
                 vars.title ? `  titel: ${vars.title}` : '',
-                vars.vendor ? `  leverandør: ${vars.vendor}` : '',
-                vars.productType ? `  produkttype: ${vars.productType}` : '',
                 vars.barcode ? `  ean: ${vars.barcode}` : '',
                 vars.sku ? `  sku: ${vars.sku}` : '',
                 vars.collections ? `  kollektioner: ${vars.collections}` : '',
