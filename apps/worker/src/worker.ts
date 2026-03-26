@@ -3000,7 +3000,9 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
           return lines + sourceSection;
         }).join('\n\n---\n\n');
 
-        const shopIntroContext = aiIntroduction.trim() ? `\n\nWEBSHOPPEN (baggrundsviden om butikken — bruges KUN som kontekst, nævn ALDRIG webshoppens navn, leveringsservice eller webshop-specifikke oplysninger direkte i produktteksterne):\n${aiIntroduction.trim()}` : '';
+        // Use identical format to /products/[id] individual AI worker — just WEBSHOPEN: label.
+        // The restrictions (no shop name, no delivery info, etc.) are now in DEFAULT_MASTER_PROMPT rules 7+8.
+        const shopIntroContext = aiIntroduction.trim() ? `\n\nWEBSHOPPEN:\n${aiIntroduction.trim()}` : '';
 
         // Use the raw prompt template here — do NOT renderPrompt with first product's variables.
         // Rendering with one product's data bakes that product's context into the instruction for ALL products,
