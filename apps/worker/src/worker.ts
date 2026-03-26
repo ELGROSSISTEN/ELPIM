@@ -189,6 +189,29 @@ type WorkerSourceMeta = {
   fieldMappings?: Array<{ csvColumn: string; fieldDefinitionId: string }>;
 };
 
+// Must stay identical to DEFAULT_AI_BASE_PROMPT in apps/web/app/products/[id]/page.tsx and apps/web/components/products-grid.tsx.
+// This is the prompt prefix the frontend embeds in every individual field job's payload.promptTemplate.
+// Campaign worker uses it as prefix so the compiled promptTemplate is byte-for-byte identical to the individual path.
+const INDIVIDUAL_PROMPT_PREFIX = `Du er en senior e-commerce copywriter og PIM-specialist med dyb forståelse for konverteringsoptimering og SEO.
+
+Du modtager produktdata og genererer præcis den feltværdi der er anmodet om:
+- faktuel og præcis baseret udelukkende på de givne data
+- kommercielt stærk: sælger fordele, ikke blot features
+- SEO-optimeret med naturligt, flydende sprog
+- skrevet på dansk i et klart og professionelt sprog
+- fri for overdrivelser, generiske floskler og usande påstande
+
+Regler:
+1) Brug kun data der er givet — opfind ALDRIG tekniske specifikationer, tal eller egenskaber der ikke er eksplicit angivet.
+2) Mangler der data til et felt, skriv hellere ingenting frem for at gætte eller hallucinere.
+3) Sæt kunden i centrum: hvad får de ud af det? Hvad løser produktet?
+4) Undgå generiske vendinger som "høj kvalitet", "fantastisk produkt", "perfekt til".
+5) Skriv konkret, præcist og letlæseligt.
+6) Returnér kun den endelige feltværdi — ingen forklaringer, ingen overskrifter, ingen præambel.
+
+Tilgængelige placeholders i prompt:
+{{title}}, {{handle}}, {{vendor}}, {{productType}}, {{descriptionHtml}}, {{sku}}, {{barcode}}, {{price}}, {{compareAtPrice}}, {{weight}}, {{weightUnit}}, {{hsCode}}, {{countryOfOrigin}}, {{collections}}`;
+
 const DEFAULT_MASTER_PROMPT = `Du er en senior e-commerce copywriter og PIM-specialist med dyb forståelse for konverteringsoptimering og SEO.
 
 Du modtager produktdata og genererer præcis den feltværdi der er anmodet om:
@@ -2915,9 +2938,9 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
         // Title and SEO fields have fixed character limits in their prompts — don't override.
         const fixedLengthField = fd.id === '__title' || fd.id === '__seo_title' || fd.id === '__seo_description';
         const effectiveLengthInstruction = fixedLengthField ? '' : lengthInstruction;
-        // Build compiled prompt template identical to /products/[id] frontend assembly:
-        // FELT DU SKAL GENERERE TIL → SUPPLERENDE INSTRUKTION → ØNSKET LÆNGDE → HTML format → DATAKILDER preview.
-        // Without this wrapping, the AI lacks HTML format instructions, field-label context, and length guidance.
+        // Build compiled prompt template 1:1 with /products/[id] frontend assembly (products/[id]/page.tsx line 730):
+        //   ${INDIVIDUAL_PROMPT_PREFIX}\n\nFELT DU SKAL GENERERE TIL: ...\n\nSUPPLERENDE INSTRUKTION:\n...<length><html><sourcePreview><sourcesOnlyPreview>
+        // The INDIVIDUAL_PROMPT_PREFIX matches DEFAULT_AI_BASE_PROMPT from the frontend exactly.
         const rawPromptBody = promptsByField[fd.id] ?? `Generer ${fd.label}.`;
         const htmlInstruction = outputIsHtml
           ? '\n\nHTML FORMATERING AKTIVERET:\nStrukturér og opstil outputtet med semantisk HTML (fx <p>, <h2>, <ul>/<li>, <strong>). Brug HTML til at skabe overskuelighed og hierarki. Returnér kun HTML-koden uden wrapper-elementer.'
@@ -2925,7 +2948,10 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
         const sourcePreview = activeSources.length > 0
           ? `\n\n--- DATAKILDER (injiceres ved generering) ---\n${(activeSources as Array<{ id: string; name: string; promptTemplate?: string | null }>).map((s) => `[${s.name}]: ${s.promptTemplate ?? 'Standard datakilde-prompt'}`).join('\n')}`
           : '';
-        const promptTemplate = `FELT DU SKAL GENERERE TIL: ${fd.label}\n\nSUPPLERENDE INSTRUKTION:\n${rawPromptBody}${effectiveLengthInstruction}${htmlInstruction}${sourcePreview}`;
+        const sourcesOnlyPreview = sourcesOnly && activeSources.length > 0
+          ? '\n\nVIGTIGT — BRUG UDELUKKENDE KILDEDATA: Brug kun information fra kildedataene.'
+          : '';
+        const promptTemplate = `${INDIVIDUAL_PROMPT_PREFIX}\n\nFELT DU SKAL GENERERE TIL: ${fd.label}\n\nSUPPLERENDE INSTRUKTION:\n${rawPromptBody}${effectiveLengthInstruction}${htmlInstruction}${sourcePreview}${sourcesOnlyPreview}`;
 
         // Skip products that already have a value (unless overwrite)
         const toProcess: Array<typeof enriched[0] & { batchIndex: number }> = [];
