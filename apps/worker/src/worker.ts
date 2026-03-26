@@ -335,14 +335,19 @@ const fetchLiveLookupRows = async (
 ): Promise<Array<{ sourceName: string; promptTemplate?: string; rowData: Record<string, string> }>> => {
   const results: Array<{ sourceName: string; promptTemplate?: string; rowData: Record<string, string> }> = [];
   const lookupSources = sources.filter((s) => workerReadSourceMeta(s.tagsJson).type === 'live_lookup');
+  logger.info({ totalSources: sources.length, liveLookupSources: lookupSources.map((s) => s.name) }, 'fetchLiveLookupRows: sources summary');
   if (lookupSources.length === 0) return results;
+
+  // Support both {{ean}} and {{barcode}} since EAN is stored as barcode in variants
+  const resolvedVariables: Record<string, string> = { ...variables, ean: variables['ean'] ?? variables['barcode'] ?? '' };
 
   for (const source of lookupSources) {
     const meta = workerReadSourceMeta(source.tagsJson);
     // Replace {{variable}} placeholders in URL template
     const resolvedUrl = source.url.replace(/\{\{(\w+)\}\}/g, (_: string, key: string) =>
-      encodeURIComponent(variables[key] ?? ''),
+      encodeURIComponent(resolvedVariables[key] ?? ''),
     );
+    logger.info({ sourceId: source.id, sourceName: source.name, resolvedUrl }, 'fetchLiveLookupRows: calling source');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
     try {
@@ -352,7 +357,7 @@ const fetchLiveLookupRows = async (
       });
       clearTimeout(timeout);
       if (!response.ok) {
-        logger.warn({ sourceId: source.id, url: resolvedUrl, status: response.status }, 'Live lookup HTTP error — skipping');
+        logger.warn({ sourceId: source.id, sourceName: source.name, url: resolvedUrl, status: response.status }, 'Live lookup HTTP error — skipping');
         continue;
       }
       const contentType = response.headers.get('content-type') ?? '';
@@ -364,10 +369,11 @@ const fetchLiveLookupRows = async (
         const text = await response.text();
         rowData = { response_text: text.slice(0, 3000) };
       }
+      logger.info({ sourceId: source.id, sourceName: source.name, rowCount: Object.keys(rowData).length }, 'fetchLiveLookupRows: source result');
       results.push({ sourceName: source.name, promptTemplate: meta.promptTemplate, rowData });
-    } catch {
+    } catch (err) {
       clearTimeout(timeout);
-      logger.warn({ sourceId: source.id, url: resolvedUrl }, 'Live lookup fetch failed — skipping');
+      logger.warn({ sourceId: source.id, sourceName: source.name, url: resolvedUrl, err: String(err) }, 'Live lookup fetch failed — skipping');
     }
   }
   return results;
@@ -2033,6 +2039,7 @@ ${productLines}`;
             // ProductCollection table may not exist in all environments
           }
 
+          const barcodeValue = variant?.barcode ?? '';
           variables = {
             title: product.title ?? '',
             handle: product.handle ?? '',
@@ -2041,7 +2048,8 @@ ${productLines}`;
             status: product.status ?? '',
             descriptionHtml: product.descriptionHtml ?? '',
             sku: variant?.sku ?? '',
-            barcode: variant?.barcode ?? '',
+            barcode: barcodeValue,
+            ean: barcodeValue, // alias: live lookup URLs may use {{ean}}
             price: variant?.price ?? '',
             compareAtPrice: variant?.compareAtPrice ?? '',
             weight: variant?.weight != null ? String(variant.weight) : '',
@@ -2751,6 +2759,7 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
       },
       select: { id: true, name: true, tagsJson: true, url: true },
     });
+    await logCampaign(campaignId, 'info', `Datakilder: ${activeSources.length} aktive (selectedSourceIds: [${selectedSourceIds.join(', ')}]) → ${activeSources.map((s) => `"${s.name}" (${(workerReadSourceMeta(s.tagsJson) as any).type ?? 'web'})`).join(', ')}`);
 
     let processedTotal = 0;
     let failedTotal = 0;
@@ -2888,6 +2897,7 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
         } catch { /* ignore */ }
 
         const v = product.variants?.[0] ?? null;
+        const barcodeVal = (v as any)?.barcode ?? '';
         const variables: Record<string, string> = {
           title: product.title ?? '',
           handle: product.handle ?? '',
@@ -2896,7 +2906,8 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
           status: product.status ?? '',
           descriptionHtml: product.descriptionHtml ?? '',
           sku: v?.sku ?? '',
-          barcode: (v as any)?.barcode ?? '',
+          barcode: barcodeVal,
+          ean: barcodeVal, // alias: live lookup URLs may use {{ean}}
           price: (v as any)?.price ?? '',
           compareAtPrice: (v as any)?.compareAtPrice ?? '',
           weight: (v as any)?.weight != null ? String((v as any).weight) : '',
