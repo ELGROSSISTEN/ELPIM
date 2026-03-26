@@ -2929,13 +2929,7 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
         const htmlInstruction = outputIsHtml
           ? '\n\nHTML FORMATERING AKTIVERET:\nReturnér output som ren HTML. Følg præcist det HTML-format der er specificeret i instruksen ovenfor — brug ellers semantisk HTML med passende tags. Ingen markdown, ingen forklaringstekst — kun HTML-koden.'
           : '';
-        const sourcePreview = activeSources.length > 0
-          ? `\n\n--- DATAKILDER (injiceres ved generering) ---\n${activeSources.map((s) => `[${s.name}]: ${workerReadSourceMeta(s.tagsJson).promptTemplate ?? 'Standard datakilde-prompt'}`).join('\n')}`
-          : '';
-        const sourcesOnlyPreview = sourcesOnly && activeSources.length > 0
-          ? '\n\nVIGTIGT — BRUG UDELUKKENDE KILDEDATA: Brug kun information fra kildedataene.'
-          : '';
-        const promptTemplate = `FELT DU SKAL GENERERE TIL: ${fd.label}\n\nSUPPLERENDE INSTRUKTION:\n${rawPromptBody}${effectiveLengthInstruction}${brandVoiceInstruction}${htmlInstruction}${sourcePreview}${sourcesOnlyPreview}`;
+        const promptTemplate = `FELT DU SKAL GENERERE TIL: ${fd.label}\n\nSUPPLERENDE INSTRUKTION:\n${rawPromptBody}${effectiveLengthInstruction}${brandVoiceInstruction}${htmlInstruction}`;
 
         // Skip products that already have a value (unless overwrite)
         const toProcess: Array<typeof enriched[0] & { batchIndex: number }> = [];
