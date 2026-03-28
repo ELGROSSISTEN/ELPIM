@@ -2859,6 +2859,8 @@ const runCampaignWorker = new Worker<RunCampaignJobRef>(
     let failedTotal = 0;
     let campaignTokensInput = 0;
     let campaignTokensOutput = 0;
+    let consecutiveFailures = 0;
+    const MAX_CONSECUTIVE_FAILURES = 5; // auto-pause if 5 products in a row all fail every field
 
     // Build list of product IDs to exclude based on aiProcessedAt dates
     const excludedDates = ((campaign as any).excludeProcessedDatesJson as string[]) ?? [];
@@ -3322,7 +3324,20 @@ ${productLines}`;
           // Stamp aiProcessedAt so this product can be identified by date in future campaign filters
           await (prisma as any).product.update({ where: { id: product.id }, data: { aiProcessedAt: now } });
         }
-        if (finalStatus === 'done') processedTotal++; else failedTotal++;
+        if (finalStatus === 'done') {
+          processedTotal++;
+          consecutiveFailures = 0; // reset on any success
+        } else {
+          failedTotal++;
+          consecutiveFailures++;
+        }
+      }
+
+      // Auto-pause if too many consecutive failures — prevents runaway spend on systematic errors
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        await (prisma as any).runCampaign.update({ where: { id: campaignId }, data: { status: 'paused' } });
+        await logCampaign(campaignId, 'warn', `Kørsel sat automatisk på pause: ${consecutiveFailures} produkter i træk fejlede på alle felter. Tjek loggen for fejlårsag og genoptag manuelt.`);
+        break;
       }
 
       // Incremental auto-sync: push each completed product to Shopify immediately after its batch,
