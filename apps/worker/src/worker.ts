@@ -3325,6 +3325,60 @@ ${productLines}`;
         if (finalStatus === 'done') processedTotal++; else failedTotal++;
       }
 
+      // Incremental auto-sync: push each completed product to Shopify immediately after its batch,
+      // so progress is not lost if the campaign is paused, crashes, or takes weeks to finish.
+      if ((campaign as any).autoSync) {
+        try {
+          const systemFieldIds = (campaign.fieldsJson as string[]).filter((f: string) => f.startsWith('__'));
+          const batchDoneItems = enriched
+            .filter(({ item }) => {
+              const fd = (item.fieldsDoneJson ?? {}) as Record<string, string>;
+              return Object.values(fd).every((v) => v === 'done' || v === 'skipped');
+            })
+            .filter(({ item }) => !item.syncedAt);
+          if (batchDoneItems.length > 0) {
+            const productIds = batchDoneItems.map(({ product }) => product?.id).filter(Boolean) as string[];
+            const productDataMap = new Map<string, { descriptionHtml: string | null; seoJson: unknown; title: string }>();
+            if (systemFieldIds.length > 0 && productIds.length > 0) {
+              const products = await prisma.product.findMany({
+                where: { id: { in: productIds } },
+                select: { id: true, descriptionHtml: true, seoJson: true, title: true },
+              });
+              for (const p of products) productDataMap.set(p.id, p);
+            }
+            const syncJobs = await Promise.all(
+              batchDoneItems.map(({ item, product }) => {
+                const patch: Record<string, unknown> = {};
+                if (product && systemFieldIds.length > 0) {
+                  const p = productDataMap.get(product.id);
+                  if (p) {
+                    if (systemFieldIds.includes('__description') && p.descriptionHtml != null) patch.descriptionHtml = p.descriptionHtml;
+                    if ((systemFieldIds.includes('__seo_title') || systemFieldIds.includes('__seo_description')) && p.seoJson) patch.seoJson = p.seoJson;
+                    if (systemFieldIds.includes('__title')) patch.title = p.title;
+                  }
+                }
+                return prisma.syncJob.create({
+                  data: { shopId: campaign.shopId, type: 'outbound_product_patch', payloadJson: { productId: item.productId, patch } as any },
+                });
+              }),
+            );
+            await deltaSyncQueue.addBulk(
+              syncJobs.map((sj, i) => ({
+                name: 'outbound-product',
+                data: { syncJobId: sj.id },
+                opts: { jobId: sj.id, delay: i * 200 },
+              })),
+            );
+            await (prisma as any).runCampaignItem.updateMany({
+              where: { id: { in: batchDoneItems.map(({ item }) => item.id) } },
+              data: { syncedAt: new Date() },
+            });
+          }
+        } catch (syncErr: unknown) {
+          await logCampaign(campaignId, 'warn', `Løbende auto-sync fejlede for batch: ${syncErr instanceof Error ? syncErr.message : String(syncErr)}`);
+        }
+      }
+
       const [nowDone, nowFailed, nowSkipped] = await Promise.all([
         (prisma as any).runCampaignItem.count({ where: { campaignId, status: 'done' } }),
         (prisma as any).runCampaignItem.count({ where: { campaignId, status: 'failed' } }),
