@@ -10358,23 +10358,25 @@ app.post('/run-campaigns/:id/populate', async (request: any, reply: any) => {
 
   const limited = limit > 0 ? allProducts.slice(0, limit) : allProducts;
 
-  // Upsert items with sortOrder reflecting the interleaved collection order
-  const upserts = limited.map((p, i) =>
-    prisma.runCampaignItem.upsert({
-      where: { campaignId_productId: { campaignId: id, productId: p.id } },
-      update: { sortOrder: i },
-      create: {
+  // Delete existing items and recreate — far faster than 134K individual upserts in one transaction
+  await prisma.runCampaignItem.deleteMany({ where: { campaignId: id } });
+
+  // Insert in batches of 2000 to avoid memory and timeout issues
+  const BATCH = 2000;
+  for (let i = 0; i < limited.length; i += BATCH) {
+    const chunk = limited.slice(i, i + BATCH);
+    await prisma.runCampaignItem.createMany({
+      data: chunk.map((p, j) => ({
         campaignId: id,
         productId: p.id,
         title: p.title,
         sku: p.variants?.[0]?.sku ?? null,
         ean: p.variants?.[0]?.barcode ?? null,
-        sortOrder: i,
-      },
-    }),
-  );
-
-  await prisma.$transaction(upserts);
+        sortOrder: i + j,
+      })),
+      skipDuplicates: true,
+    });
+  }
 
   const total = await prisma.runCampaignItem.count({ where: { campaignId: id } });
   await prisma.runCampaign.update({ where: { id }, data: { totalItems: total } });
